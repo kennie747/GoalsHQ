@@ -1,4 +1,52 @@
 {
+  "goalshq": {
+    "title": "GoalsHQ",
+    "strategies": "Strategies",
+    "noStrategies": "No strategies yet — add the engine(s) that will move this goal.",
+    "newStrategy": "New strategy name",
+    "directProjects": "Direct projects",
+    "linkedProjects": "Linked projects",
+    "noLinkedProjects": "No projects linked yet.",
+    "pickProject": "Choose a project…",
+    "link": "Link",
+    "unlink": "Unlink",
+    "progressMode": "Progress from",
+    "importance": "Importance",
+    "status": "Status",
+    "targetDate": "Target",
+    "goalMetrics": "Goal metrics",
+    "strategyMetrics": "Strategy metrics",
+    "keyResults": "Key results",
+    "noKeyResults": "No key results yet.",
+    "krName": "Metric name",
+    "krTarget": "Target",
+    "milestones": "Milestones",
+    "noMilestones": "No milestones yet.",
+    "msTitle": "Milestone",
+    "empty": "No goals yet. Create a goal in tududi, then add strategies and metrics here.",
+    "loadError": "Could not load GoalsHQ data.",
+    "atRiskCallout": "{{count}} goal(s) are behind schedule and need attention.",
+    "health": {
+      "on_track": "On track",
+      "at_risk": "At risk",
+      "off_track": "Off track",
+      "no_data": "No data"
+    },
+    "mode": {
+      "rollup_strategies": "Strategies",
+      "rollup_projects": "Projects",
+      "rollup_tasks": "Tasks",
+      "metric": "Key results",
+      "milestones": "Milestones",
+      "manual": "Manual"
+    },
+    "strategyStatus": {
+      "active": "Active",
+      "paused": "Paused",
+      "achieved": "Achieved",
+      "dropped": "Dropped"
+    }
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
