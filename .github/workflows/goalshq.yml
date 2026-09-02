@@ -1,0 +1,27 @@
+name: GoalsHQ Drift Check
+
+# The GoalsHQ ↔ tududi contract tripwire, run on a schedule so upstream drift is
+# caught even when no PR has triggered pr-checks.yml. On PRs the same tests run
+# as the `goalshq` job in pr-checks.yml.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - run: npm run lint
+      - run: cd backend && npx cross-env NODE_ENV=test jest goalshq
+      - run: npm run build
