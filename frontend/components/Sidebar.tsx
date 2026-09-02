@@ -16,6 +16,7 @@ import SidebarViews from './Sidebar/SidebarViews';
 import SidebarPeople from './Sidebar/SidebarPeople';
 import SidebarBoards from './Sidebar/SidebarBoards';
 import SidebarInsights from './Sidebar/SidebarInsights';
+import SidebarGoalsHQ from './Sidebar/SidebarGoalsHQ'; // goalshq integration hook
 import SidebarAdmin from './Sidebar/SidebarAdmin';
 import SidebarBookmarks from './Sidebar/SidebarBookmarks';
 import { KeyboardShortcutsConfig } from '../utils/keyboardShortcutsService';
@@ -174,6 +175,13 @@ const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                         <div className="mb-[6px]">
                             <SidebarInsights
+                                handleNavClick={handleNavClick}
+                                location={location}
+                            />
+                        </div>
+                        {/* goalshq integration hook */}
+                        <div className="mb-[6px]">
+                            <SidebarGoalsHQ
                                 handleNavClick={handleNavClick}
                                 location={location}
                             />

@@ -49,6 +49,8 @@ import { invalidateProfileCache } from './utils/profileService';
 import { notifySwSession, notifySwClearCache } from './utils/swUtils';
 // Lazy load Tasks component to prevent issues with tags loading
 const Tasks = lazy(() => import('./components/Tasks'));
+// goalshq integration hook
+const GoalsHqApp = lazy(() => import('./components/GoalsHQ/GoalsHqApp'));
 
 const App: React.FC = () => {
     const { i18n } = useTranslation();
@@ -361,6 +363,11 @@ const App: React.FC = () => {
                                         <Navigate to="/today" replace />
                                     )
                                 }
+                            />
+                            {/* goalshq integration hook */}
+                            <Route
+                                path="/goalshq/*"
+                                element={<GoalsHqApp />}
                             />
                             <Route path="*" element={<NotFound />} />
                         </Route>

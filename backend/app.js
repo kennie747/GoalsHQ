@@ -302,6 +302,7 @@ const aiAssistantModule = require('./modules/ai-assistant');
 const peopleModule = require('./modules/people');
 const templatesModule = require('./modules/templates');
 const reportsModule = require('./modules/reports');
+const goalshqModule = require('./modules/goalshq'); // goalshq integration hook
 
 // Swagger documentation - enabled by default, protected by authentication
 // Mounted on /api-docs to avoid conflicts with API routes
@@ -390,6 +391,7 @@ const registerApiRoutes = (basePath) => {
     app.use(basePath, peopleModule.routes);
     app.use(basePath, templatesModule.routes);
     app.use(basePath, reportsModule.routes);
+    app.use(basePath, goalshqModule.routes); // goalshq integration hook
 };
 
 // Register routes at both /api and /api/v1 (if versioned) to maintain backwards compatibility

@@ -1,0 +1,76 @@
+name: PR Checks
+
+# Additive gate: covers what the base ci.yml (lint · backend tests · build) does
+# NOT — full frontend tests, the GoalsHQ contract/unit/perf/integration job, and
+# the Playwright E2E suite. Branch protection on main requires BOTH `test` (from
+# ci.yml) and `all-green` (from this workflow).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - run: npm run frontend:test
+
+  goalshq:
+    # Fast, explicitly-named signal for the GoalsHQ <-> tududi contract. Also
+    # covered by ci.yml's backend tests, but surfaced on its own so a contract
+    # break is unmistakable in the PR checks list.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - run: cd backend && npx cross-env NODE_ENV=test jest goalshq
+
+  e2e:
+    # GoalsHQ Playwright spec only (see scripts/e2e-goalshq.sh for why it is
+    # scoped). The full suite is not run by this repo's CI.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: bash scripts/e2e-goalshq.sh
+
+  all-green:
+    # One required status that is green only when every job above succeeded.
+    runs-on: ubuntu-latest
+    needs: [frontend-tests, goalshq, e2e]
+    if: always()
+    steps:
+      - name: Verify all required checks passed
+        run: |
+          echo "frontend-tests = ${{ needs.frontend-tests.result }}"
+          echo "goalshq        = ${{ needs.goalshq.result }}"
+          echo "e2e            = ${{ needs.e2e.result }}"
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
+            echo "::error::One or more required checks did not succeed."
+            exit 1
+          fi
+          echo "All required checks passed."

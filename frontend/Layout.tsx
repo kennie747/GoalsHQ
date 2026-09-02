@@ -86,11 +86,22 @@ const Layout: React.FC<LayoutProps> = ({
     }, []);
 
     const {
-        notesStore: { notes, isLoading: isNotesLoading, isError: isNotesError },
-        areasStore: { areas, isLoading: isAreasLoading, isError: isAreasError },
+        notesStore: {
+            notes,
+            isLoading: isNotesLoading,
+            isError: isNotesError,
+            hasLoaded: hasNotesLoaded,
+        },
+        areasStore: {
+            areas,
+            isLoading: isAreasLoading,
+            isError: isAreasError,
+            hasLoaded: hasAreasLoaded,
+        },
         tasksStore: {
             isLoading: isTasksLoading,
             isError: isTasksError,
+            hasLoaded: hasTasksLoaded,
             createTask: createTaskInStore,
         },
         projectsStore: {
@@ -98,8 +109,14 @@ const Layout: React.FC<LayoutProps> = ({
             setProjects,
             isLoading: isProjectsLoading,
             isError: isProjectsError,
+            hasLoaded: hasProjectsLoaded,
         },
-        tagsStore: { tags, isLoading: isTagsLoading, isError: isTagsError },
+        tagsStore: {
+            tags,
+            isLoading: isTagsLoading,
+            isError: isTagsError,
+            hasLoaded: hasTagsLoaded,
+        },
     } = useStore();
 
     const createAndOpenTaskDetails = async () => {
@@ -402,12 +419,17 @@ const Layout: React.FC<LayoutProps> = ({
 
     const mainContentMarginLeft = isSidebarOpen ? 'ml-sidebar' : 'ml-0';
 
+    // Only show the full-screen loader for a store's *first* load. Once a
+    // store has loaded once, subsequent background refreshes (e.g. a page
+    // forcing a fresh fetch on remount) must not swap out `{children}` -
+    // doing so unmounts the routed page mid-fetch, which re-triggers its
+    // mount effect and refetches again, looping forever (issue #1427).
     const isLoading =
-        isNotesLoading ||
-        isAreasLoading ||
-        isTasksLoading ||
-        isProjectsLoading ||
-        isTagsLoading;
+        (isNotesLoading && !hasNotesLoaded) ||
+        (isAreasLoading && !hasAreasLoaded) ||
+        (isTasksLoading && !hasTasksLoaded) ||
+        (isProjectsLoading && !hasProjectsLoaded) ||
+        (isTagsLoading && !hasTagsLoaded);
     const isError =
         isNotesError ||
         isAreasError ||
