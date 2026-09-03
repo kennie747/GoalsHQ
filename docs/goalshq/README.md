@@ -11,6 +11,10 @@ GoalsHQ is a **strictly additive** strategic-execution layer on top of tududi. I
 It never modifies, hides, reorders, or disables any existing tududi feature. With
 GoalsHQ turned off, tududi behaves exactly as before.
 
+> **Running & testing locally:** see [`RUNNING.md`](RUNNING.md) — the dev runbook
+> (frontend `:8081` / backend `:3003`, `bash scripts/dev.sh`, test commands,
+> troubleshooting).
+
 ## Where it lives
 
 | Area | Path |
