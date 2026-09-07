@@ -7,16 +7,39 @@ import {
     FlagIcon,
     XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { Goal, GoalHorizon, GoalStatus } from '../../entities/Goal';
+import { Goal, GoalHorizon, GoalStatus, GoalDetail as GoalHqDetail } from '../../entities/Goal';
+import { GoalProgressMode } from '../../entities/GoalSettings';
 import { Task } from '../../entities/Task';
 import { Project } from '../../entities/Project';
 import { fetchGoalByUid, createGoal, updateGoal, deleteGoal } from '../../utils/goalsService';
-import { extractUidFromSlug, createProjectUrl } from '../../utils/slugUtils';
+import {
+    fetchGoalshqGoal,
+    updateGoalSettings,
+    createStrategy,
+} from '../../utils/goalsHqService';
+import { extractUidFromSlug, createProjectUrl, createStrategyUrl } from '../../utils/slugUtils';
 import ConfirmDialog from '../Shared/ConfirmDialog';
 import TaskList from '../Task/TaskList';
 import { useStore } from '../../store/useStore';
 import { useToast } from '../Shared/ToastContext';
 import ColorPicker from '../Shared/ColorPicker';
+import {
+    ProgressBar,
+    HealthChip,
+    PercentLabel,
+    ImportanceStars,
+    TrendSparkline,
+} from '../Shared/ProgressIndicators';
+import MetricsPanels from '../Strategy/MetricsPanels';
+
+const GOAL_PROGRESS_MODES: GoalProgressMode[] = [
+    'rollup_strategies',
+    'rollup_projects',
+    'rollup_tasks',
+    'metric',
+    'milestones',
+    'manual',
+];
 
 const TASK_STATUS_DONE = [2, 3, 'done', 'archived'];
 
@@ -52,6 +75,46 @@ const GoalDetails: React.FC = () => {
     const loadGoals = useStore((state: any) => state.goalsStore.loadGoals);
     const areas = useStore((state: any) => state.areasStore.areas);
     const projects: Project[] = useStore((state: any) => state.projectsStore.projects);
+    const goalshqEnabled = useStore(
+        (state) => state.userSettingsStore.goalshqEnabled
+    );
+
+    const [goalHq, setGoalHq] = useState<GoalHqDetail | null>(null);
+    const [goalHqError, setGoalHqError] = useState(false);
+    const [newStrategy, setNewStrategy] = useState('');
+    const [showInactiveStrategies, setShowInactiveStrategies] =
+        useState(false);
+
+    const loadGoalHq = React.useCallback(async (goalUid: string) => {
+        try {
+            setGoalHq(await fetchGoalshqGoal(goalUid));
+            setGoalHqError(false);
+        } catch {
+            setGoalHqError(true);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!goalshqEnabled || !goal?.uid) return;
+        loadGoalHq(goal.uid);
+    }, [goalshqEnabled, goal?.uid, loadGoalHq]);
+
+    const setGoalProgressMode = async (mode: GoalProgressMode) => {
+        if (!goal?.uid) return;
+        await updateGoalSettings(goal.uid, { progress_mode: mode });
+        loadGoalHq(goal.uid);
+    };
+    const setGoalImportance = async (value: number) => {
+        if (!goal?.uid) return;
+        await updateGoalSettings(goal.uid, { importance: value });
+        loadGoalHq(goal.uid);
+    };
+    const addStrategy = async () => {
+        if (!goal?.uid || !newStrategy.trim()) return;
+        await createStrategy(goal.uid, { name: newStrategy.trim() });
+        setNewStrategy('');
+        loadGoalHq(goal.uid);
+    };
 
     useEffect(() => {
         if (isNew) return;
@@ -492,6 +555,206 @@ const GoalDetails: React.FC = () => {
                             </div>
                         )}
                     </div>
+                </div>
+            )}
+
+            {/* Strategy (GoalsHQ measurable tier) — only in view mode, only when enabled */}
+            {!isNew && !isEditing && goal && goalshqEnabled && !goalHqError && goalHq && (
+                <div className="mt-10 border-t border-gray-200 dark:border-gray-700 pt-8">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                        <h2 className="text-lg font-light text-gray-700 dark:text-gray-300">
+                            {t('goalshq.strategy', 'Strategy')}
+                        </h2>
+                        <div className="flex items-center gap-3">
+                            <ProgressBar
+                                percent={goalHq.percent}
+                                health={goalHq.health}
+                                className="w-32"
+                            />
+                            <PercentLabel percent={goalHq.percent} />
+                            <HealthChip health={goalHq.health} />
+                            <TrendSparkline points={goalHq.trend} />
+                        </div>
+                    </div>
+
+                    <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-700">
+                        <label className="flex items-center gap-2">
+                            <span className="text-gray-500 dark:text-gray-400">
+                                {t('goalshq.progressMode', 'Progress from')}
+                            </span>
+                            <select
+                                value={goalHq.settings.progress_mode}
+                                onChange={(e) =>
+                                    setGoalProgressMode(
+                                        e.target.value as GoalProgressMode
+                                    )
+                                }
+                                className="rounded border border-gray-300 bg-white px-2 py-1 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                            >
+                                {GOAL_PROGRESS_MODES.map((m) => (
+                                    <option key={m} value={m}>
+                                        {t(`goalshq.mode.${m}`, m)}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <label className="flex items-center gap-2">
+                            <span className="text-gray-500 dark:text-gray-400">
+                                {t('goalshq.importance', 'Importance')}
+                            </span>
+                            <ImportanceStars
+                                value={goalHq.settings.importance}
+                                onChange={setGoalImportance}
+                            />
+                        </label>
+                    </div>
+
+                    <section className="mb-8">
+                        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            {t('goalshq.strategies', 'Strategies')}
+                        </h3>
+                        {(() => {
+                            const isInactive = (s: (typeof goalHq.strategies)[number]) =>
+                                s.status !== 'active' || s.kind === 'experiment';
+                            const visible = goalHq.strategies.filter(
+                                (s) => !isInactive(s)
+                            );
+                            const inactive = goalHq.strategies.filter(isInactive);
+                            const renderStrategy = (
+                                s: (typeof goalHq.strategies)[number]
+                            ) => (
+                                <Link
+                                    key={s.uid}
+                                    to={createStrategyUrl({
+                                        uid: s.uid,
+                                        name: s.name,
+                                    })}
+                                    className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 hover:shadow-sm dark:border-gray-700"
+                                >
+                                    <span className="flex-1 font-medium text-gray-800 dark:text-gray-100">
+                                        {s.name}
+                                    </span>
+                                    {s.kind === 'experiment' && (
+                                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                                            {t('goalshq.experiment', 'experiment')}
+                                        </span>
+                                    )}
+                                    {s.status !== 'active' && (
+                                        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                                            {t(
+                                                `goalshq.strategyStatus.${s.status}`,
+                                                s.status
+                                            )}
+                                        </span>
+                                    )}
+                                    <span className="text-xs text-gray-400">
+                                        {s.kind}
+                                    </span>
+                                    <ImportanceStars value={s.importance} />
+                                    <ProgressBar
+                                        percent={s.percent}
+                                        health={s.health}
+                                        className="w-24"
+                                    />
+                                    <PercentLabel percent={s.percent} />
+                                    <HealthChip health={s.health} />
+                                </Link>
+                            );
+                            return (
+                                <div className="space-y-2">
+                                    {visible.map(renderStrategy)}
+                                    {goalHq.strategies.length === 0 && (
+                                        <p className="text-sm text-gray-400">
+                                            {t(
+                                                'goalshq.noStrategies',
+                                                'No strategies yet — add the engine(s) that will move this goal.'
+                                            )}
+                                        </p>
+                                    )}
+                                    {inactive.length > 0 && (
+                                        <>
+                                            <button
+                                                onClick={() =>
+                                                    setShowInactiveStrategies(
+                                                        (v) => !v
+                                                    )
+                                                }
+                                                className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                            >
+                                                {showInactiveStrategies
+                                                    ? t(
+                                                          'goalshq.hideInactiveStrategies',
+                                                          'Hide paused/experimental strategies'
+                                                      )
+                                                    : t(
+                                                          'goalshq.showInactiveStrategies',
+                                                          'Show {{count}} paused/experimental strategies',
+                                                          { count: inactive.length }
+                                                      )}
+                                            </button>
+                                            {showInactiveStrategies &&
+                                                inactive.map(renderStrategy)}
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })()}
+                        <div className="mt-3 flex items-center gap-2">
+                            <input
+                                value={newStrategy}
+                                onChange={(e) => setNewStrategy(e.target.value)}
+                                placeholder={t(
+                                    'goalshq.newStrategy',
+                                    'New strategy name'
+                                )}
+                                className="flex-1 rounded border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                            />
+                            <button
+                                onClick={addStrategy}
+                                className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
+                            >
+                                {t('common.add', 'Add')}
+                            </button>
+                        </div>
+                    </section>
+
+                    {goalHq.direct_projects.length > 0 && (
+                        <section className="mb-8">
+                            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                {t('goalshq.directProjects', 'Direct projects')}
+                            </h3>
+                            <ul className="space-y-1 text-sm">
+                                {goalHq.direct_projects.map((p) => (
+                                    <li
+                                        key={p.uid}
+                                        className="flex items-center gap-3 rounded border border-gray-200 p-2 dark:border-gray-700"
+                                    >
+                                        <span className="flex-1 text-gray-800 dark:text-gray-100">
+                                            {p.name}
+                                        </span>
+                                        <ProgressBar
+                                            percent={p.percent}
+                                            className="w-24"
+                                        />
+                                        <PercentLabel percent={p.percent} />
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+                    )}
+
+                    <section>
+                        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                            {t('goalshq.goalMetrics', 'Goal metrics')}
+                        </h3>
+                        <MetricsPanels
+                            parentType="goal"
+                            parentUid={goal.uid!}
+                            keyResults={goalHq.key_results}
+                            milestones={goalHq.milestones}
+                            onChange={() => loadGoalHq(goal.uid!)}
+                        />
+                    </section>
                 </div>
             )}
 

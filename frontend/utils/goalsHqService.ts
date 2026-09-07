@@ -1,221 +1,271 @@
-/**
- * GoalsHQ API client. Self-contained (pattern: goalsService.ts) — CSRF on every
- * mutation, session cookie on every request.
- */
-
-import { handleAuthResponse, getPostHeadersWithCsrf } from './authUtils';
+import { handleAuthResponse } from './authUtils';
 import { getApiPath } from '../config/paths';
 import { getCsrfToken } from './csrfService';
-import {
-    GoalSummary,
-    GoalDetail,
-    GoalSettings,
-    Strategy,
-    KeyResult,
-    Milestone,
-    ParentType,
-} from '../entities/GoalsHq';
+import { GoalSummary, GoalDetail } from '../entities/Goal';
+import { GoalSettings, ParentType } from '../entities/GoalSettings';
+import { Strategy } from '../entities/Strategy';
+import { KeyResult } from '../entities/KeyResult';
+import { Milestone } from '../entities/Milestone';
 
-async function getJson<T>(path: string, errorMsg: string): Promise<T> {
-    const res = await fetch(getApiPath(`goalshq/${path}`), {
+export const fetchGoalshqGoals = async (): Promise<GoalSummary[]> => {
+    const response = await fetch(getApiPath('goalshq/goals'), {
         credentials: 'include',
         headers: { Accept: 'application/json' },
     });
-    await handleAuthResponse(res, errorMsg);
-    return res.json();
-}
-
-async function mutate<T>(
-    method: 'POST' | 'PATCH' | 'DELETE',
-    path: string,
-    body: unknown,
-    errorMsg: string
-): Promise<T | undefined> {
-    const headers =
-        method === 'DELETE'
-            ? {
-                  Accept: 'application/json',
-                  'x-csrf-token': await getCsrfToken(),
-              }
-            : await getPostHeadersWithCsrf();
-    const res = await fetch(getApiPath(`goalshq/${path}`), {
-        method,
-        credentials: 'include',
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    await handleAuthResponse(res, errorMsg);
-    if (res.status === 204) return undefined;
-    return res.json();
-}
-
-export const fetchGoalshqConfig = async (): Promise<{ enabled: boolean }> => {
-    try {
-        return await getJson('config', 'Failed to load GoalsHQ config.');
-    } catch {
-        return { enabled: false };
-    }
+    await handleAuthResponse(response, 'Failed to load goals.');
+    const data = await response.json();
+    return data.goals;
 };
 
-export const fetchGoalshqGoals = async (): Promise<GoalSummary[]> =>
-    (await getJson<{ goals: GoalSummary[] }>('goals', 'Failed to load goals.'))
-        .goals;
-
-export const fetchGoalshqGoal = async (uid: string): Promise<GoalDetail> =>
-    (
-        await getJson<{ goal: GoalDetail }>(
-            `goals/${uid}`,
-            'Failed to load goal.'
-        )
-    ).goal;
+export const fetchGoalshqGoal = async (uid: string): Promise<GoalDetail> => {
+    const response = await fetch(getApiPath(`goalshq/goals/${uid}`), {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+    });
+    await handleAuthResponse(response, 'Failed to load goal.');
+    const data = await response.json();
+    return data.goal;
+};
 
 export const updateGoalSettings = async (
     uid: string,
-    data: Partial<GoalSettings>
-): Promise<GoalSettings> =>
-    (
-        (await mutate<{ settings: GoalSettings }>(
-            'PATCH',
-            `goals/${uid}/settings`,
-            data,
-            'Failed to update goal settings.'
-        )) as { settings: GoalSettings }
-    ).settings;
+    settingsData: Partial<GoalSettings>
+): Promise<GoalSettings> => {
+    const token = await getCsrfToken();
+    const response = await fetch(getApiPath(`goalshq/goals/${uid}/settings`), {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-csrf-token': token,
+        },
+        body: JSON.stringify(settingsData),
+    });
+    await handleAuthResponse(response, 'Failed to update goal settings.');
+    const data = await response.json();
+    return data.settings;
+};
 
-export const recomputeGoal = async (uid: string): Promise<GoalDetail> =>
-    (
-        (await mutate<{ goal: GoalDetail }>(
-            'POST',
-            `goals/${uid}/recompute`,
-            {},
-            'Failed to recompute goal.'
-        )) as { goal: GoalDetail }
-    ).goal;
+export const recomputeGoal = async (uid: string): Promise<GoalDetail> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/goals/${uid}/recompute`),
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+        }
+    );
+    await handleAuthResponse(response, 'Failed to recompute goal.');
+    const data = await response.json();
+    return data.goal;
+};
 
-export const fetchStrategies = async (goalUid: string): Promise<Strategy[]> =>
-    (
-        await getJson<{ strategies: Strategy[] }>(
-            `goals/${goalUid}/strategies`,
-            'Failed to load strategies.'
-        )
-    ).strategies;
+export const fetchStrategies = async (goalUid: string): Promise<Strategy[]> => {
+    const response = await fetch(
+        getApiPath(`goalshq/goals/${goalUid}/strategies`),
+        {
+            credentials: 'include',
+            headers: { Accept: 'application/json' },
+        }
+    );
+    await handleAuthResponse(response, 'Failed to load strategies.');
+    const data = await response.json();
+    return data.strategies;
+};
 
 export const createStrategy = async (
     goalUid: string,
-    data: Partial<Strategy>
-): Promise<Strategy> =>
-    (
-        (await mutate<{ strategy: Strategy }>(
-            'POST',
-            `goals/${goalUid}/strategies`,
-            data,
-            'Failed to create strategy.'
-        )) as { strategy: Strategy }
-    ).strategy;
+    strategyData: Partial<Strategy>
+): Promise<Strategy> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/goals/${goalUid}/strategies`),
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+            body: JSON.stringify(strategyData),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to create strategy.');
+    const data = await response.json();
+    return data.strategy;
+};
 
-export const fetchStrategy = async (uid: string): Promise<Strategy> =>
-    (
-        await getJson<{ strategy: Strategy }>(
-            `strategies/${uid}`,
-            'Failed to load strategy.'
-        )
-    ).strategy;
+export const fetchStrategy = async (uid: string): Promise<Strategy> => {
+    const response = await fetch(getApiPath(`goalshq/strategies/${uid}`), {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+    });
+    await handleAuthResponse(response, 'Failed to load strategy.');
+    const data = await response.json();
+    return data.strategy;
+};
 
 export const updateStrategy = async (
     uid: string,
-    data: Partial<Strategy>
-): Promise<Strategy> =>
-    (
-        (await mutate<{ strategy: Strategy }>(
-            'PATCH',
-            `strategies/${uid}`,
-            data,
-            'Failed to update strategy.'
-        )) as { strategy: Strategy }
-    ).strategy;
+    strategyData: Partial<Strategy>
+): Promise<Strategy> => {
+    const token = await getCsrfToken();
+    const response = await fetch(getApiPath(`goalshq/strategies/${uid}`), {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-csrf-token': token,
+        },
+        body: JSON.stringify(strategyData),
+    });
+    await handleAuthResponse(response, 'Failed to update strategy.');
+    const data = await response.json();
+    return data.strategy;
+};
 
 export const deleteStrategy = async (uid: string): Promise<void> => {
-    await mutate(
-        'DELETE',
-        `strategies/${uid}`,
-        undefined,
-        'Failed to delete strategy.'
-    );
+    const token = await getCsrfToken();
+    const response = await fetch(getApiPath(`goalshq/strategies/${uid}`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json',
+            'x-csrf-token': token,
+        },
+    });
+    await handleAuthResponse(response, 'Failed to delete strategy.');
 };
 
 export const linkProject = async (
     strategyUid: string,
     projectUid: string,
     weight?: number
-): Promise<Strategy> =>
-    (
-        (await mutate<{ strategy: Strategy }>(
-            'POST',
-            `strategies/${strategyUid}/projects`,
-            { project_uid: projectUid, weight },
-            'Failed to link project.'
-        )) as { strategy: Strategy }
-    ).strategy;
+): Promise<Strategy> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/strategies/${strategyUid}/projects`),
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+            body: JSON.stringify({ project_uid: projectUid, weight }),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to link project.');
+    const data = await response.json();
+    return data.strategy;
+};
 
 export const unlinkProject = async (
     strategyUid: string,
     projectUid: string
-): Promise<Strategy> =>
-    (
-        (await mutate<{ strategy: Strategy }>(
-            'DELETE',
-            `strategies/${strategyUid}/projects/${projectUid}`,
-            undefined,
-            'Failed to unlink project.'
-        )) as { strategy: Strategy }
-    ).strategy;
+): Promise<Strategy> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/strategies/${strategyUid}/projects/${projectUid}`),
+        {
+            method: 'DELETE',
+            credentials: 'include',
+            headers: {
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+        }
+    );
+    await handleAuthResponse(response, 'Failed to unlink project.');
+    const data = await response.json();
+    return data.strategy;
+};
 
-export const recomputeStrategy = async (uid: string): Promise<Strategy> =>
-    (
-        (await mutate<{ strategy: Strategy }>(
-            'POST',
-            `strategies/${uid}/recompute`,
-            {},
-            'Failed to recompute strategy.'
-        )) as { strategy: Strategy }
-    ).strategy;
+export const recomputeStrategy = async (uid: string): Promise<Strategy> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/strategies/${uid}/recompute`),
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+        }
+    );
+    await handleAuthResponse(response, 'Failed to recompute strategy.');
+    const data = await response.json();
+    return data.strategy;
+};
 
 /* key results */
 
 export const createKeyResult = async (
     parentType: ParentType,
     parentUid: string,
-    data: Partial<KeyResult>
-): Promise<KeyResult> =>
-    (
-        (await mutate<{ key_result: KeyResult }>(
-            'POST',
-            `${parentType}/${parentUid}/key-results`,
-            data,
-            'Failed to create key result.'
-        )) as { key_result: KeyResult }
-    ).key_result;
+    krData: Partial<KeyResult>
+): Promise<KeyResult> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/${parentType}/${parentUid}/key-results`),
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+            body: JSON.stringify(krData),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to create key result.');
+    const data = await response.json();
+    return data.key_result;
+};
 
 export const updateKeyResult = async (
     uid: string,
-    data: Partial<KeyResult>
-): Promise<KeyResult> =>
-    (
-        (await mutate<{ key_result: KeyResult }>(
-            'PATCH',
-            `key-results/${uid}`,
-            data,
-            'Failed to update key result.'
-        )) as { key_result: KeyResult }
-    ).key_result;
+    krData: Partial<KeyResult>
+): Promise<KeyResult> => {
+    const token = await getCsrfToken();
+    const response = await fetch(getApiPath(`goalshq/key-results/${uid}`), {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-csrf-token': token,
+        },
+        body: JSON.stringify(krData),
+    });
+    await handleAuthResponse(response, 'Failed to update key result.');
+    const data = await response.json();
+    return data.key_result;
+};
 
 export const deleteKeyResult = async (uid: string): Promise<void> => {
-    await mutate(
-        'DELETE',
-        `key-results/${uid}`,
-        undefined,
-        'Failed to delete key result.'
-    );
+    const token = await getCsrfToken();
+    const response = await fetch(getApiPath(`goalshq/key-results/${uid}`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json',
+            'x-csrf-token': token,
+        },
+    });
+    await handleAuthResponse(response, 'Failed to delete key result.');
 };
 
 /* milestones */
@@ -223,35 +273,81 @@ export const deleteKeyResult = async (uid: string): Promise<void> => {
 export const createMilestone = async (
     parentType: ParentType,
     parentUid: string,
-    data: Partial<Milestone>
-): Promise<Milestone> =>
-    (
-        (await mutate<{ milestone: Milestone }>(
-            'POST',
-            `${parentType}/${parentUid}/milestones`,
-            data,
-            'Failed to create milestone.'
-        )) as { milestone: Milestone }
-    ).milestone;
+    milestoneData: Partial<Milestone>
+): Promise<Milestone> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/${parentType}/${parentUid}/milestones`),
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+            body: JSON.stringify(milestoneData),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to create milestone.');
+    const data = await response.json();
+    return data.milestone;
+};
 
 export const updateMilestone = async (
     uid: string,
-    data: Partial<Milestone>
-): Promise<Milestone> =>
-    (
-        (await mutate<{ milestone: Milestone }>(
-            'PATCH',
-            `milestones/${uid}`,
-            data,
-            'Failed to update milestone.'
-        )) as { milestone: Milestone }
-    ).milestone;
+    milestoneData: Partial<Milestone>
+): Promise<Milestone> => {
+    const token = await getCsrfToken();
+    const response = await fetch(getApiPath(`goalshq/milestones/${uid}`), {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-csrf-token': token,
+        },
+        body: JSON.stringify(milestoneData),
+    });
+    await handleAuthResponse(response, 'Failed to update milestone.');
+    const data = await response.json();
+    return data.milestone;
+};
 
 export const deleteMilestone = async (uid: string): Promise<void> => {
-    await mutate(
-        'DELETE',
-        `milestones/${uid}`,
-        undefined,
-        'Failed to delete milestone.'
+    const token = await getCsrfToken();
+    const response = await fetch(getApiPath(`goalshq/milestones/${uid}`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json',
+            'x-csrf-token': token,
+        },
+    });
+    await handleAuthResponse(response, 'Failed to delete milestone.');
+};
+
+export interface ExpandedTask {
+    uid: string;
+    name: string;
+    due_date: string | null;
+}
+
+export const expandMilestone = async (uid: string): Promise<ExpandedTask> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/milestones/${uid}/expand`),
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+        }
     );
+    await handleAuthResponse(response, 'Failed to expand milestone into a task.');
+    const data = await response.json();
+    return data.task;
 };

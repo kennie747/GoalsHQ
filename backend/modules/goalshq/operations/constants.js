@@ -29,9 +29,24 @@ const STRATEGY_PROGRESS_MODES = [
     'manual',
 ];
 
+const PROJECT_PROGRESS_MODES = [
+    'rollup_tasks',
+    'metric',
+    'milestones',
+    'manual',
+];
+
+const PARENT_TYPES = ['goal', 'strategy', 'project'];
+const KEY_RESULT_PARENT_TYPES = ['goal', 'strategy', 'project', 'task'];
+
 const STRATEGY_KINDS = ['primary', 'secondary', 'experiment'];
 const STRATEGY_STATUSES = ['active', 'paused', 'achieved', 'dropped'];
 const KR_DIRECTIONS = ['increase', 'decrease', 'maintain'];
+// 'tasks_done_count' auto-sets current_value to the count of done tasks in
+// the KR's parent scope on every rollup pass (see operations/rollup.js).
+// Not honored for a task-parented KR — those are informational-only per
+// Phase A Follow-up AF3 and never touched by recomputeGoal().
+const KR_AUTO_SOURCES = ['manual', 'tasks_done_count'];
 const MILESTONE_STATUSES = ['pending', 'achieved', 'missed'];
 const HEALTH_VALUES = ['on_track', 'at_risk', 'off_track', 'no_data'];
 
@@ -44,9 +59,13 @@ module.exports = {
     HEALTH_AT_RISK_SLACK,
     GOAL_PROGRESS_MODES,
     STRATEGY_PROGRESS_MODES,
+    PROJECT_PROGRESS_MODES,
+    PARENT_TYPES,
+    KEY_RESULT_PARENT_TYPES,
     STRATEGY_KINDS,
     STRATEGY_STATUSES,
     KR_DIRECTIONS,
+    KR_AUTO_SOURCES,
     MILESTONE_STATUSES,
     HEALTH_VALUES,
     DEFAULT_IMPORTANCE,

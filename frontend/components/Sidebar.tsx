@@ -16,7 +16,7 @@ import SidebarViews from './Sidebar/SidebarViews';
 import SidebarPeople from './Sidebar/SidebarPeople';
 import SidebarBoards from './Sidebar/SidebarBoards';
 import SidebarInsights from './Sidebar/SidebarInsights';
-import SidebarGoalsHQ from './Sidebar/SidebarGoalsHQ'; // goalshq integration hook
+import SidebarStrategy from './Sidebar/SidebarStrategy';
 import SidebarAdmin from './Sidebar/SidebarAdmin';
 import SidebarBookmarks from './Sidebar/SidebarBookmarks';
 import { KeyboardShortcutsConfig } from '../utils/keyboardShortcutsService';
@@ -62,6 +62,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     const navigate = useNavigate();
     const location = useLocation();
     const habitsEnabled = useStore((state) => state.userSettingsStore.habitsEnabled);
+    const goalshqEnabled = useStore((state) => state.userSettingsStore.goalshqEnabled);
 
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
@@ -125,6 +126,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                                 location={location}
                             />
                         </div>
+                        {goalshqEnabled && (
+                            <div className="mb-[6px]">
+                                <SidebarStrategy
+                                    handleNavClick={handleNavClick}
+                                    location={location}
+                                />
+                            </div>
+                        )}
                         <div className="mb-[6px]">
                             <SidebarNotes
                                 handleNavClick={handleNavClick}
@@ -175,13 +184,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                         <div className="mb-[6px]">
                             <SidebarInsights
-                                handleNavClick={handleNavClick}
-                                location={location}
-                            />
-                        </div>
-                        {/* goalshq integration hook */}
-                        <div className="mb-[6px]">
-                            <SidebarGoalsHQ
                                 handleNavClick={handleNavClick}
                                 location={location}
                             />

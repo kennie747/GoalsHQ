@@ -1,7 +1,8 @@
 'use strict';
 
 const service = require('./service');
-const { getAuthenticatedUserId, errors } = require('./core/tududi');
+const { getAuthenticatedUserId } = require('../../utils/request-utils');
+const errors = require('../../shared/errors');
 
 const { UnauthorizedError, NotFoundError } = errors;
 
@@ -18,10 +19,6 @@ function ensureEnabled() {
 }
 
 const controller = {
-    config(req, res) {
-        res.json({ enabled: service.isEnabled() });
-    },
-
     async listGoals(req, res, next) {
         try {
             ensureEnabled();
@@ -49,6 +46,35 @@ const controller = {
             ensureEnabled();
             const userId = requireUserId(req);
             const settings = await service.updateGoalSettings(
+                userId,
+                req.params.uid,
+                req.body || {}
+            );
+            res.json({ settings });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async getProject(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const project = await service.getProjectDetail(
+                userId,
+                req.params.uid
+            );
+            res.json({ project });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async updateProjectSettings(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const settings = await service.updateProjectSettings(
                 userId,
                 req.params.uid,
                 req.body || {}
@@ -149,6 +175,22 @@ const controller = {
                 userId,
                 req.params.uid,
                 projectUid
+            );
+            res.json({ strategy });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async moveProjectLink(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const strategy = await service.moveProjectLink(
+                userId,
+                req.params.uid,
+                req.params.projectUid,
+                req.body || {}
             );
             res.json({ strategy });
         } catch (err) {
@@ -265,6 +307,17 @@ const controller = {
             const userId = requireUserId(req);
             await service.deleteMilestone(userId, req.params.uid);
             res.status(204).send();
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async expandMilestone(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const task = await service.expandMilestone(userId, req.params.uid);
+            res.status(201).json({ task });
         } catch (err) {
             next(err);
         }

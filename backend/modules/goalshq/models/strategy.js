@@ -5,9 +5,10 @@ const { uid } = require('../../../utils/uid');
 
 /**
  * goalshq_strategies — the Strategy/Outcome tier that sits between a tududi Goal
- * and its Projects. GoalsHQ-owned; no Sequelize association to core models
- * (see docs/goalshq/adr/0001-isolation-architecture.md). `goal_id` / `user_id`
- * are plain integer columns joined manually in the repository.
+ * and its Projects, now a first-class peer of Goal/Project/Task (see
+ * docs/goalshq/adr/0002-first-class-integration.md). Associations to Goal and
+ * to Project (via goalshq_project_strategies) are declared in
+ * backend/models/index.js.
  */
 module.exports = (sequelize) => {
     const Strategy = sequelize.define(

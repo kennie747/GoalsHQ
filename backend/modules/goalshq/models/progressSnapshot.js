@@ -4,8 +4,11 @@ const { DataTypes } = require('sequelize');
 
 /**
  * goalshq_progress_snapshots — one row per (parent, user-local day) capturing a
- * goal's or strategy's computed percent + health. Powers trend lines and seeds
- * the future daily-archive feature.
+ * goal's, strategy's, or project's computed percent + health. Powers trend
+ * lines and seeds the future daily-archive feature. Deliberately NOT extended
+ * to Task — tasks are too short-lived/numerous for a daily snapshot to be
+ * worth the row growth (see docs/goalshq/adr/0002-first-class-integration.md,
+ * Phase A Follow-up AF3).
  */
 module.exports = (sequelize) => {
     const ProgressSnapshot = sequelize.define(
@@ -17,7 +20,7 @@ module.exports = (sequelize) => {
                 autoIncrement: true,
             },
             parent_type: {
-                type: DataTypes.ENUM('goal', 'strategy'),
+                type: DataTypes.ENUM('goal', 'strategy', 'project'),
                 allowNull: false,
             },
             parent_id: {

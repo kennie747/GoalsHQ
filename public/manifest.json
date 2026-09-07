@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "tududi",
-  "short_name": "tududi",
-  "description": "A simple and effective task management application",
+  "name": "GoalsHQ",
+  "short_name": "GoalsHQ",
+  "description": "A strategic-execution task management application",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

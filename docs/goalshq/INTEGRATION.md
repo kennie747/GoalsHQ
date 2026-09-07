@@ -1,85 +1,95 @@
-# GoalsHQ integration hooks
+# GoalsHQ integration points
 
-GoalsHQ is additive-only. Every file it adds lives in a new path and never
-conflicts on an upstream merge. The **only** edits to files tududi also owns are
-the small, append-style hunks below, all collected on the commit
-`chore(goalshq): integration hooks`.
+GoalsHQ is no longer additive-only (see `adr/0002-first-class-integration.md`)
+— it has real Sequelize associations, a real store slice, and real top-level
+routes/sidebar entries, the same as Area/Goal/Project/Task. This means a
+`git merge upstream/main` is expected to conflict non-trivially on the files
+below, by design — see `UPSTREAM_TRACKING.md` for the review workflow that
+replaces mergeability.
 
-If an upstream merge conflicts on one of these, re-apply the hunk by hand — it is
-always "add our line back next to where it was".
+This page is a map of where GoalsHQ touches shared, non-`goalshq`-prefixed
+files, for anyone (human or a future AI session) trying to understand the
+blast radius of a change, not a list of isolated "hooks" to reapply.
 
-## 1. `backend/app.js` — 2 lines
+## `backend/models/index.js`
 
-```diff
- const templatesModule = require('./modules/templates');
- const reportsModule = require('./modules/reports');
-+const goalshqModule = require('./modules/goalshq'); // goalshq integration hook
-```
+GoalsHQ models (`GoalshqStrategy`, `GoalshqKeyResult`, `GoalshqMilestone`,
+`GoalshqProgressSnapshot`, `GoalshqGoalSettings`, `GoalshqProjectSettings`,
+`GoalshqProjectStrategy`) plus `TaskCarryoverEvent` are required and
+registered alongside every core model, with real associations: `Goal.hasMany
+Strategies`, `GoalshqStrategy.belongsTo(Goal)`, a many-to-many Strategy↔Project
+via `GoalshqProjectStrategy`, and scoped polymorphic associations for
+KeyResult/Milestone/ProgressSnapshot keyed on `[Goal,'goal']`/
+`[GoalshqStrategy,'strategy']`/`[Project,'project']` (plus `[Task,'task']`
+for KeyResult only). `TaskCarryoverEvent` has ordinary `User`/`Task`
+associations.
 
-```diff
-     app.use(basePath, templatesModule.routes);
-     app.use(basePath, reportsModule.routes);
-+    app.use(basePath, goalshqModule.routes); // goalshq integration hook
- };
-```
+## `backend/app.js`
 
-There is **no** `startServer()` edit — the rollup scheduler self-initialises
-lazily from the module's router on the first `/api/goalshq/*` request.
+`goalshqModule.routes` and the carryover routes (mounted under the tasks
+module) are wired in `registerRoutes()`. The GoalsHQ scheduler and the
+carryover-classification cron job are both started from `startServer()`
+alongside `taskScheduler`/`caldavSyncScheduler` — no lazy self-init.
 
-## 2. `frontend/App.tsx` — 2 lines
+## `backend/modules/tasks/queries/query-builders.js`
 
-```diff
- const Tasks = lazy(() => import('./components/Tasks'));
-+// goalshq integration hook
-+const GoalsHqApp = lazy(() => import('./components/GoalsHQ/GoalsHqApp'));
-```
+All three task-include arrays (`filterTasksByParams`'s inline array,
+`getTaskIncludeConfig()`, `getTaskIncludeConfigLight()`) include the `Goal`
+association alongside `Project`/`Area`, so `task.goal_uid` populates for any
+caller — this was a universal bug fix (Phase C), not GoalsHQ-specific, but it
+lives in a file GoalsHQ depends on.
 
-```diff
-+                            {/* goalshq integration hook */}
-+                            <Route
-+                                path="/goalshq/*"
-+                                element={<GoalsHqApp />}
-+                            />
-                             <Route path="*" element={<NotFound />} />
-                         </Route>
-```
+## `backend/modules/ai-assistant/service.js`
 
-The route is a **wildcard** (`/goalshq/*`) — GoalsHQ can add any number of
-internal pages without ever touching `App.tsx` again.
+`fetchUserContext()` additionally calls the GoalsHQ repository for
+strategy/KR/goal-settings context and the carryover repository for
+repeat-postponed tasks; `buildContextSummary()` renders a "## Strategy & Key
+Results" and a "## Keeps Getting Postponed" section. `generateDailyBrief()`
+itself and its response schema are unchanged.
 
-## 3. `frontend/components/Sidebar.tsx` — 2 lines
+## `frontend/App.tsx`
 
-```diff
- import SidebarInsights from './Sidebar/SidebarInsights';
-+import SidebarGoalsHQ from './Sidebar/SidebarGoalsHQ'; // goalshq integration hook
-```
+Top-level routes: `/strategy`, `/strategy/:uidSlug`, `/archive` — ordinary
+`<Route>` entries alongside `/goal/:uidSlug` etc., not a wildcard sub-app.
 
-```diff
-                         </div>
-+                        {/* goalshq integration hook */}
-+                        <div className="mb-[6px]">
-+                            <SidebarGoalsHQ
-+                                handleNavClick={handleNavClick}
-+                                location={location}
-+                            />
-+                        </div>
-                         <div className="mb-[6px]">
-                             <SidebarAdmin
-```
+## `frontend/components/Goal/GoalDetails.tsx`
 
-## 4. `public/locales/en/translation.json` — additive JSON block
+The Strategy section (percent/health, progress-mode selector, strategies list
+with paused/experiment collapsing, direct projects, goal-level KR/milestone
+panel) is embedded directly in the existing Goal detail page, gated by
+`userSettingsStore.goalshqEnabled` — not a separate page.
 
-A single `"goalshq": { … }` object added as the first key. Conflicts resolve by
-keeping both the upstream change and the `goalshq` block. Other languages fall
-back to English automatically (`frontend/i18n.ts`).
+## `frontend/components/Sidebar.tsx`
 
-## What is deliberately NOT touched
+Renders `<SidebarStrategy>` (which itself renders both "Strategy" and
+"Archive" nav entries) directly below `<SidebarGoals>`, gated by
+`goalshqEnabled` read from `userSettingsStore`.
 
-- `backend/models/index.js` — GoalsHQ models self-register from
-  `backend/modules/goalshq/models/` on the shared Sequelize instance; no
-  associations to core models.
+## `frontend/store/useStore.ts`
+
+A `strategiesStore` slice (goal summaries for `/strategy` and the sidebar)
+lives alongside every other slice in the same `create()` call — there is no
+separate GoalsHQ store.
+
+## `frontend/entities/*.ts`
+
+`Goal.ts` includes `GoalSummary`/`GoalDetail` (with `strategies`/
+`key_results`/`milestones`/`trend` fields); `Project.ts` includes `ProjectRef`;
+`Task.ts`'s `_suggestionMeta.reason` union includes the goal/strategy-risk
+reasons used by the Today worksheet's suggestion scoring
+(`frontend/utils/suggestionScoringUtils.ts`).
+
+## `public/locales/en/translation.json`
+
+Three namespaces: `goalshq.*`, `carryover.*`, `archive.*`. Other languages
+fall back to English automatically (`frontend/i18n.ts`).
+
+## What is deliberately still separate
+
+- `backend/modules/goalshq/` and `backend/modules/tasks/carryover/` — the
+  business logic itself stays modular, just not isolated from the data layer.
 - `backend/modules/feature-flags/*`, `frontend/utils/featureFlags.ts` — the
-  feature gate is the `GOALSHQ_ENABLED` env var, read in-module.
-- `frontend/store/useStore.ts` — GoalsHQ has its own `useGoalsHqStore`.
+  gate is still the plain `GOALSHQ_ENABLED` env var / `goalshq_enabled` user
+  feature flag, read in-module — no dependency on the generic feature-flags
+  system.
 - `frontend/config/paths.ts` — `getApiPath` takes any string, no whitelist.
-- Any existing module, migration, component, serializer or route.

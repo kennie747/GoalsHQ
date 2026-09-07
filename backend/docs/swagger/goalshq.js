@@ -2,18 +2,7 @@
  * @swagger
  * tags:
  *   name: GoalsHQ
- *   description: Strategic goal-to-action layer (add-on). Additive-only; disabled when GOALSHQ_ENABLED=false.
- */
-
-/**
- * @swagger
- * /api/goalshq/config:
- *   get:
- *     summary: Whether GoalsHQ is enabled
- *     tags: [GoalsHQ]
- *     responses:
- *       200:
- *         description: "{ enabled: boolean }"
+ *   description: Strategic goal-to-action layer. Whole-instance enablement is exposed as `features.goalshq_enabled` on GET /api/current_user, not a dedicated endpoint; disabled when GOALSHQ_ENABLED=false.
  */
 
 /**

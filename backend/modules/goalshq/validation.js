@@ -1,12 +1,16 @@
 'use strict';
 
-const { errors } = require('./core/tududi');
+const errors = require('../../shared/errors');
 const {
     GOAL_PROGRESS_MODES,
     STRATEGY_PROGRESS_MODES,
+    PROJECT_PROGRESS_MODES,
+    PARENT_TYPES,
+    KEY_RESULT_PARENT_TYPES,
     STRATEGY_KINDS,
     STRATEGY_STATUSES,
     KR_DIRECTIONS,
+    KR_AUTO_SOURCES,
     MILESTONE_STATUSES,
     MIN_IMPORTANCE,
     MAX_IMPORTANCE,
@@ -62,9 +66,11 @@ function assertDate(value, field) {
     }
 }
 
-function assertParentType(value) {
-    if (!['goal', 'strategy'].includes(value)) {
-        throw new ValidationError('parentType must be "goal" or "strategy"');
+function assertParentType(value, allowed = PARENT_TYPES) {
+    if (!allowed.includes(value)) {
+        throw new ValidationError(
+            `parentType must be one of: ${allowed.join(', ')}`
+        );
     }
 }
 
@@ -78,8 +84,12 @@ module.exports = {
     assertParentType,
     GOAL_PROGRESS_MODES,
     STRATEGY_PROGRESS_MODES,
+    PROJECT_PROGRESS_MODES,
+    PARENT_TYPES,
+    KEY_RESULT_PARENT_TYPES,
     STRATEGY_KINDS,
     STRATEGY_STATUSES,
     KR_DIRECTIONS,
+    KR_AUTO_SOURCES,
     MILESTONE_STATUSES,
 };

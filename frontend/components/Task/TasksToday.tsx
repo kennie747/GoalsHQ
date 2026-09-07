@@ -6,7 +6,13 @@ import i18n from 'i18next';
 import { useNavigate } from 'react-router-dom';
 import { getLocalesPath, getApiPath } from '../../config/paths';
 import { sortTasksByPriorityDueDateProject } from '../../utils/taskSortUtils';
-import { scoreAndSortSuggestedTasks } from '../../utils/suggestionScoringUtils';
+import {
+    scoreAndSortSuggestedTasks,
+    buildGoalHealthMap,
+    buildProjectStrategyMap,
+    buildGoalInfoMap,
+} from '../../utils/suggestionScoringUtils';
+import TodayStrategyBanner from './TodayStrategyBanner';
 import { getTodayDateString } from '../../utils/dateUtils';
 import {
     ClipboardDocumentListIcon,
@@ -75,6 +81,18 @@ const TasksToday: React.FC = () => {
         (state) => state.userSettingsStore.aiAssistantEnabled
     );
     const todayHabits = useStore((state) => state.habitsStore.habits);
+    const goalshqEnabled = useStore(
+        (state) => state.userSettingsStore.goalshqEnabled
+    );
+    const goalSummaries = useStore(
+        (state) => state.strategiesStore.goalSummaries
+    );
+    const goalSummariesHasLoaded = useStore(
+        (state) => state.strategiesStore.hasLoaded
+    );
+    const loadGoalSummaries = useStore(
+        (state) => state.strategiesStore.loadGoalSummaries
+    );
     const loadHabitsStore = useStore((state) => state.habitsStore.loadHabits);
     const logHabitCompletion = useStore(
         (state) => state.habitsStore.logCompletion
@@ -204,6 +222,19 @@ const TasksToday: React.FC = () => {
         return filterNonHabitTasks(tasks);
     }, [metrics.tasks_completed_today, getTasksFromStore]);
 
+    const goalHealthByUid = useMemo(
+        () => buildGoalHealthMap(goalSummaries),
+        [goalSummaries]
+    );
+    const strategyByProjectId = useMemo(
+        () => buildProjectStrategyMap(goalSummaries, localProjects),
+        [goalSummaries, localProjects]
+    );
+    const goalInfoByUid = useMemo(
+        () => buildGoalInfoMap(goalSummaries),
+        [goalSummaries]
+    );
+
     // Smart scoring: one-per-project candidate pool, priority-dominant score, reason chips.
     // Use all store tasks minus tasks already shown in other sections - gives buildCandidatePool
     // the widest possible view of pending work across all active projects.
@@ -222,10 +253,24 @@ const TasksToday: React.FC = () => {
         );
 
         if (localProjects.length > 0) {
-            return scoreAndSortSuggestedTasks(candidateTasks, localProjects);
+            return scoreAndSortSuggestedTasks(
+                candidateTasks,
+                localProjects,
+                {},
+                goalHealthByUid,
+                strategyByProjectId,
+                goalInfoByUid
+            );
         }
         return sortTasksByPriorityDueDateProject(candidateTasks);
-    }, [metrics, storeTasks, localProjects]);
+    }, [
+        metrics,
+        storeTasks,
+        localProjects,
+        goalHealthByUid,
+        strategyByProjectId,
+        goalInfoByUid,
+    ]);
 
     const sortedDueTodayTasks = useMemo(() => {
         const tasks = getTasksFromStore(metrics.tasks_due_today || []);
@@ -493,6 +538,12 @@ const TasksToday: React.FC = () => {
     useEffect(() => {
         loadHabitsStore();
     }, [loadHabitsStore]);
+
+    useEffect(() => {
+        if (goalshqEnabled && !goalSummariesHasLoaded) {
+            loadGoalSummaries();
+        }
+    }, [goalshqEnabled, goalSummariesHasLoaded, loadGoalSummaries]);
 
     useEffect(() => {
         isMounted.current = true;
@@ -1239,6 +1290,22 @@ const TasksToday: React.FC = () => {
     };
 
     const todayProgress = getTodayProgress();
+    const todayRelevantTasks = useMemo(
+        () => [
+            ...plannedTasks,
+            ...sortedDueTodayTasks,
+            ...sortedOverdueTasks,
+            ...sortedSuggestedTasks,
+            ...(metrics.tasks_in_progress || []),
+        ],
+        [
+            plannedTasks,
+            sortedDueTodayTasks,
+            sortedOverdueTasks,
+            sortedSuggestedTasks,
+            metrics.tasks_in_progress,
+        ]
+    );
     const totalPlannedItems = plannedTasks.length + plannedHabits.length;
     const totalCompletedItems =
         completedTasksList.length + completedHabits.length;
@@ -1358,6 +1425,13 @@ const TasksToday: React.FC = () => {
                         </div>
                     </div>
                 </div>
+
+                <TodayStrategyBanner
+                    tasks={todayRelevantTasks}
+                    projects={localProjects}
+                    goalSummaries={goalSummaries}
+                    enabled={goalshqEnabled}
+                />
 
                 {/* AI Daily Brief - kept mounted once opened to preserve fetched content */}
                 {hasBriefMounted && aiAssistantEnabled && (

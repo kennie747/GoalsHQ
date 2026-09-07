@@ -54,6 +54,7 @@ function serializeKeyResult(kr) {
         name: kr.name,
         unit: kr.unit,
         direction: kr.direction,
+        auto_source: kr.auto_source,
         baseline_value: num(kr.baseline_value),
         target_value: num(kr.target_value),
         current_value: num(kr.current_value),
@@ -95,7 +96,17 @@ function serializeProjectRef(project, percent) {
 }
 
 /** A goal card for the dashboard list. */
-function serializeGoalSummary(goal, settings, strategies) {
+function serializeGoalSummary(
+    goal,
+    settings,
+    strategies,
+    {
+        projectUidsByStrategy = new Map(),
+        projectsByStrategy = new Map(),
+        projectsCount = null,
+        tasksCount = null,
+    } = {}
+) {
     return {
         uid: goal.uid,
         title: goal.title,
@@ -114,6 +125,8 @@ function serializeGoalSummary(goal, settings, strategies) {
         settings: serializeSettings(settings),
         percent: settings ? num(settings.cached_percent) : null,
         health: settings ? settings.cached_health || 'no_data' : 'no_data',
+        projects_count: projectsCount,
+        tasks_count: tasksCount,
         strategies: (strategies || []).map((s) => ({
             uid: s.uid,
             name: s.name,
@@ -122,6 +135,8 @@ function serializeGoalSummary(goal, settings, strategies) {
             importance: s.importance,
             percent: num(s.cached_percent),
             health: s.cached_health || 'no_data',
+            project_uids: projectUidsByStrategy.get(s.id) || [],
+            projects: projectsByStrategy.get(s.id) || [],
         })),
     };
 }

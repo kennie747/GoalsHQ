@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { HeartIcon } from '@heroicons/react/24/outline';
 import { getApiPath } from '../config/paths';
+import Logo from './Shared/Logo';
 
 interface AboutProps {
     isDarkMode?: boolean;
 }
 
-const About: React.FC<AboutProps> = ({ isDarkMode = false }) => {
+const About: React.FC<AboutProps> = () => {
     const { t } = useTranslation();
     const [version, setVersion] = useState<string>('0.3');
 
@@ -39,15 +40,7 @@ const About: React.FC<AboutProps> = ({ isDarkMode = false }) => {
                     {/* Logo and Version */}
                     <div className="text-center mb-8">
                         <div className="flex justify-center mb-4">
-                            <img
-                                src={
-                                    isDarkMode
-                                        ? '/wide-logo-light.png'
-                                        : '/wide-logo-dark.png'
-                                }
-                                alt="tududi"
-                                className="h-16 w-auto"
-                            />
+                            <Logo size="lg" />
                         </div>
                         <p className="text-lg text-gray-600 dark:text-gray-400">
                             {t('about.version', 'Version')} {version}

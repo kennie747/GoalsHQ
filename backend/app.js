@@ -443,6 +443,9 @@ async function startServer() {
         const caldavSyncScheduler = require('./modules/caldav/services/sync-scheduler');
         await caldavSyncScheduler.initialize();
 
+        // Initialize GoalsHQ rollup/GC scheduler
+        goalshqModule.scheduler.initialize();
+
         // Validate authentication configuration
         const { validateAuthConfiguration } = require('./config/authConfig');
         validateAuthConfiguration();

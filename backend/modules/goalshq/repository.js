@@ -1,23 +1,30 @@
 'use strict';
 
 /**
- * Data access for GoalsHQ. Every query is scoped by user_id; core rows (Goal,
- * Project) are looked up through tududi's models via the compat shim — no
- * Sequelize associations, no include (see ADR-0001).
+ * Data access for GoalsHQ. Every query is scoped by user_id. Core models
+ * (Goal, Project, Area) and the GoalsHQ models are both now registered on the
+ * shared Sequelize instance in backend/models/index.js with real associations
+ * (see docs/goalshq/adr/0002-first-class-integration.md).
  */
 
-const t = require('./core/tududi');
+const { Op, fn, col } = require('sequelize');
 const {
+    Goal,
+    Project,
+    Task,
+    Area,
     GoalshqStrategy,
     GoalshqProjectStrategy,
     GoalshqGoalSettings,
+    GoalshqProjectSettings,
     GoalshqKeyResult,
     GoalshqMilestone,
     GoalshqProgressSnapshot,
-} = require('./models');
-
-const { Op, Goal, Project } = t;
-const { Area } = require('../../models');
+} = require('../../models');
+const {
+    DONE_STATUSES,
+    EXCLUDED_STATUSES,
+} = require('./operations/task-status');
 
 /* ------------------------------------------------------------- core lookups */
 
@@ -31,6 +38,10 @@ async function goalById(userId, id) {
 
 async function projectByUid(userId, uid) {
     return Project.findOne({ where: { uid, user_id: userId } });
+}
+
+async function taskByUid(userId, uid) {
+    return Task.findOne({ where: { uid, user_id: userId } });
 }
 
 async function goalsForUser(userId) {
@@ -57,6 +68,22 @@ async function settingsByGoalIds(goalIds) {
         where: { goal_id: { [Op.in]: goalIds } },
     });
     return new Map(rows.map((r) => [r.goal_id, r]));
+}
+
+async function findOrCreateProjectSettings(projectId, userId) {
+    const [settings] = await GoalshqProjectSettings.findOrCreate({
+        where: { project_id: projectId },
+        defaults: { project_id: projectId, user_id: userId },
+    });
+    return settings;
+}
+
+async function projectSettingsByIds(projectIds) {
+    if (projectIds.length === 0) return new Map();
+    const rows = await GoalshqProjectSettings.findAll({
+        where: { project_id: { [Op.in]: projectIds } },
+    });
+    return new Map(rows.map((r) => [r.project_id, r]));
 }
 
 /* -------------------------------------------------------------- strategies */
@@ -108,14 +135,19 @@ async function maxStrategySortOrder(goalId) {
 
 /* ------------------------------------------------------- project ↔ strategy */
 
+/**
+ * Link a project to a strategy. A project may already be linked to other
+ * strategies — this only ever touches the (strategyId, projectId) pair itself:
+ * creates it if new, or updates its weight if it already exists. It never
+ * detaches the project from a different strategy (see moveProjectLink for
+ * that explicit, opt-in operation).
+ */
 async function linkProjectToStrategy(strategyId, projectId, userId, weight) {
     const existing = await GoalshqProjectStrategy.findOne({
-        where: { project_id: projectId },
+        where: { strategy_id: strategyId, project_id: projectId },
     });
     if (existing) {
         return existing.update({
-            strategy_id: strategyId,
-            user_id: userId,
             weight: weight ?? existing.weight,
         });
     }
@@ -133,10 +165,59 @@ async function unlinkProject(strategyId, projectId) {
     });
 }
 
+/**
+ * Explicitly move a project's link from one strategy to another (as opposed to
+ * simply adding a second link). Returns the removed link's plain data (or null
+ * if it didn't exist) and the resulting link.
+ */
+async function moveProjectLink(
+    fromStrategyId,
+    toStrategyId,
+    projectId,
+    userId,
+    weight
+) {
+    const existing = await GoalshqProjectStrategy.findOne({
+        where: { strategy_id: fromStrategyId, project_id: projectId },
+    });
+    const previous = existing ? existing.get({ plain: true }) : null;
+    if (existing) {
+        await existing.destroy();
+    }
+    const created = await linkProjectToStrategy(
+        toStrategyId,
+        projectId,
+        userId,
+        weight ?? (previous ? previous.weight : undefined)
+    );
+    return { previous, current: created };
+}
+
+async function linksForProject(projectId) {
+    return GoalshqProjectStrategy.findAll({
+        where: { project_id: projectId },
+    });
+}
+
 async function linksForStrategy(strategyId) {
     return GoalshqProjectStrategy.findAll({
         where: { strategy_id: strategyId },
     });
+}
+
+/** Batched: strategyId -> [project_id, ...], one query for any number of strategies. */
+async function linksForStrategies(strategyIds) {
+    if (strategyIds.length === 0) return new Map();
+    const rows = await GoalshqProjectStrategy.findAll({
+        where: { strategy_id: { [Op.in]: strategyIds } },
+    });
+    const map = new Map();
+    for (const link of rows) {
+        const list = map.get(link.strategy_id) || [];
+        list.push(link.project_id);
+        map.set(link.strategy_id, list);
+    }
+    return map;
 }
 
 async function linkedProjectIdsForGoal(userId, goalId) {
@@ -206,12 +287,11 @@ async function snapshots(parentType, parentId, { from, to, limit } = {}) {
 
 /* ---------------------------------------------------------- task breakdown */
 
-/** done / total top-level task counts for a set of project ids, grouped. */
+/** done / total task counts (including subtasks) for a set of project ids, grouped. */
 async function taskCountsByProject(projectIds) {
     if (projectIds.length === 0) return new Map();
-    const { fn, col, Task } = t;
     const rows = await Task.findAll({
-        where: { project_id: { [Op.in]: projectIds }, parent_task_id: null },
+        where: { project_id: { [Op.in]: projectIds } },
         attributes: ['project_id', 'status', [fn('COUNT', col('id')), 'count']],
         group: ['project_id', 'status'],
         raw: true,
@@ -219,11 +299,11 @@ async function taskCountsByProject(projectIds) {
     const map = new Map();
     for (const row of rows) {
         const status = Number(row.status);
-        if (t.EXCLUDED_STATUSES.includes(status)) continue;
+        if (EXCLUDED_STATUSES.includes(status)) continue;
         const entry = map.get(row.project_id) || { done: 0, total: 0 };
         const count = Number(row.count) || 0;
         entry.total += count;
-        if (t.DONE_STATUSES.includes(status)) entry.done += count;
+        if (DONE_STATUSES.includes(status)) entry.done += count;
         map.set(row.project_id, entry);
     }
     return map;
@@ -234,6 +314,34 @@ async function projectsForGoal(userId, goalId) {
         where: { goal_id: goalId, user_id: userId },
         attributes: ['id', 'uid', 'name', 'status', 'priority', 'color'],
     });
+}
+
+/** Batched: every project directly attached to any of these goals (goal_id FK, not via a strategy link). */
+async function projectsForGoalIds(userId, goalIds) {
+    if (goalIds.length === 0) return [];
+    return Project.findAll({
+        where: { goal_id: { [Op.in]: goalIds }, user_id: userId },
+        attributes: ['id', 'uid', 'name', 'goal_id'],
+    });
+}
+
+/** Batched: goalId -> count of tasks attached directly to the goal (task.goal_id), excluding archived/cancelled. */
+async function taskCountsByGoalIds(goalIds) {
+    if (goalIds.length === 0) return new Map();
+    const rows = await Task.findAll({
+        where: { goal_id: { [Op.in]: goalIds } },
+        attributes: ['goal_id', 'status', [fn('COUNT', col('id')), 'count']],
+        group: ['goal_id', 'status'],
+        raw: true,
+    });
+    const map = new Map();
+    for (const row of rows) {
+        const status = Number(row.status);
+        if (EXCLUDED_STATUSES.includes(status)) continue;
+        const count = Number(row.count) || 0;
+        map.set(row.goal_id, (map.get(row.goal_id) || 0) + count);
+    }
+    return map;
 }
 
 async function projectsByIds(userId, ids) {
@@ -248,9 +356,12 @@ module.exports = {
     goalByUid,
     goalById,
     projectByUid,
+    taskByUid,
     goalsForUser,
     findOrCreateSettings,
     settingsByGoalIds,
+    findOrCreateProjectSettings,
+    projectSettingsByIds,
     strategiesByGoalId,
     strategiesByGoalIds,
     strategyByUid,
@@ -258,7 +369,10 @@ module.exports = {
     maxStrategySortOrder,
     linkProjectToStrategy,
     unlinkProject,
+    moveProjectLink,
     linksForStrategy,
+    linksForStrategies,
+    linksForProject,
     linkedProjectIdsForGoal,
     keyResults,
     keyResultByUid,
@@ -269,5 +383,7 @@ module.exports = {
     snapshots,
     taskCountsByProject,
     projectsForGoal,
+    projectsForGoalIds,
+    taskCountsByGoalIds,
     projectsByIds,
 };

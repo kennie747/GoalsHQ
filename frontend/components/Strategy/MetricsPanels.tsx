@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { TrashIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, ArrowRightCircleIcon } from '@heroicons/react/24/outline';
+import { ParentType } from '../../entities/GoalSettings';
 import {
     KeyResult,
-    Milestone,
-    ParentType,
     KeyResultDirection,
-} from '../../../entities/GoalsHq';
+    KeyResultAutoSource,
+} from '../../entities/KeyResult';
+import { Milestone } from '../../entities/Milestone';
 import {
     createKeyResult,
     updateKeyResult,
@@ -14,7 +15,8 @@ import {
     createMilestone,
     updateMilestone,
     deleteMilestone,
-} from '../../../utils/goalsHqService';
+    expandMilestone,
+} from '../../utils/goalsHqService';
 
 interface Props {
     parentType: ParentType;
@@ -39,12 +41,14 @@ const MetricsPanels: React.FC<Props> = ({
         name: '',
         unit: '',
         direction: 'increase' as KeyResultDirection,
+        auto_source: 'manual' as KeyResultAutoSource,
         baseline_value: '0',
         target_value: '',
         current_value: '0',
     });
     const [msDraft, setMsDraft] = useState({ title: '', target_date: '' });
     const [busy, setBusy] = useState(false);
+    const [expandedUids, setExpandedUids] = useState<Set<string>>(new Set());
 
     const addKr = async () => {
         if (!krDraft.name.trim() || krDraft.target_value === '') return;
@@ -54,6 +58,7 @@ const MetricsPanels: React.FC<Props> = ({
                 name: krDraft.name.trim(),
                 unit: krDraft.unit || null,
                 direction: krDraft.direction,
+                auto_source: krDraft.auto_source,
                 baseline_value: Number(krDraft.baseline_value || 0),
                 target_value: Number(krDraft.target_value),
                 current_value: Number(krDraft.current_value || 0),
@@ -62,6 +67,7 @@ const MetricsPanels: React.FC<Props> = ({
                 name: '',
                 unit: '',
                 direction: 'increase',
+                auto_source: 'manual',
                 baseline_value: '0',
                 target_value: '',
                 current_value: '0',
@@ -73,7 +79,17 @@ const MetricsPanels: React.FC<Props> = ({
     };
 
     const patchKrCurrent = async (kr: KeyResult, value: number) => {
-        await updateKeyResult(krNumericId(kr), { current_value: value });
+        await updateKeyResult(kr.uid, { current_value: value });
+        onChange();
+    };
+
+    const toggleKrAutoSource = async (kr: KeyResult) => {
+        await updateKeyResult(kr.uid, {
+            auto_source:
+                kr.auto_source === 'tasks_done_count'
+                    ? 'manual'
+                    : 'tasks_done_count',
+        });
         onChange();
     };
 
@@ -93,10 +109,15 @@ const MetricsPanels: React.FC<Props> = ({
     };
 
     const toggleMs = async (m: Milestone) => {
-        await updateMilestone(msNumericId(m), {
+        await updateMilestone(m.uid, {
             status: m.status === 'achieved' ? 'pending' : 'achieved',
         });
         onChange();
+    };
+
+    const expandMs = async (m: Milestone) => {
+        await expandMilestone(m.uid);
+        setExpandedUids((prev) => new Set(prev).add(m.uid));
     };
 
     return (
@@ -115,21 +136,50 @@ const MetricsPanels: React.FC<Props> = ({
                             <span className="flex-1 text-gray-800 dark:text-gray-100">
                                 {kr.name}
                             </span>
-                            <input
-                                type="number"
-                                defaultValue={kr.current_value}
-                                onBlur={(e) =>
-                                    patchKrCurrent(kr, Number(e.target.value))
-                                }
-                                className={`${inputCls} w-20`}
-                            />
+                            {kr.auto_source === 'tasks_done_count' ? (
+                                <span
+                                    className={`${inputCls} w-20 text-center text-gray-500 dark:text-gray-400`}
+                                    title={t(
+                                        'goalshq.krAutoValueHint',
+                                        'Auto-updated from done task count'
+                                    )}
+                                >
+                                    {kr.current_value}
+                                </span>
+                            ) : (
+                                <input
+                                    type="number"
+                                    defaultValue={kr.current_value}
+                                    onBlur={(e) =>
+                                        patchKrCurrent(
+                                            kr,
+                                            Number(e.target.value)
+                                        )
+                                    }
+                                    className={`${inputCls} w-20`}
+                                />
+                            )}
                             <span className="text-gray-400">
                                 / {kr.target_value} {kr.unit || ''}
                             </span>
                             <button
+                                onClick={() => toggleKrAutoSource(kr)}
+                                className={`rounded px-1.5 py-0.5 text-xs ${
+                                    kr.auto_source === 'tasks_done_count'
+                                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                                        : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                                }`}
+                                title={t(
+                                    'goalshq.krToggleAutoHint',
+                                    'Toggle auto-update from done task count'
+                                )}
+                            >
+                                {t('goalshq.krAuto', 'auto')}
+                            </button>
+                            <button
                                 aria-label={t('common.delete', 'Delete')}
                                 onClick={async () => {
-                                    await deleteKeyResult(krNumericId(kr));
+                                    await deleteKeyResult(kr.uid);
                                     onChange();
                                 }}
                                 className="text-gray-400 hover:text-red-500"
@@ -205,10 +255,30 @@ const MetricsPanels: React.FC<Props> = ({
                                     {m.target_date}
                                 </span>
                             )}
+                            {expandedUids.has(m.uid) ? (
+                                <span className="text-xs text-green-600 dark:text-green-400">
+                                    {t('goalshq.msExpanded', 'Task created')}
+                                </span>
+                            ) : (
+                                <button
+                                    aria-label={t(
+                                        'goalshq.msExpand',
+                                        'Expand into task'
+                                    )}
+                                    title={t(
+                                        'goalshq.msExpand',
+                                        'Expand into task'
+                                    )}
+                                    onClick={() => expandMs(m)}
+                                    className="text-gray-400 hover:text-blue-500"
+                                >
+                                    <ArrowRightCircleIcon className="h-4 w-4" />
+                                </button>
+                            )}
                             <button
                                 aria-label={t('common.delete', 'Delete')}
                                 onClick={async () => {
-                                    await deleteMilestone(msNumericId(m));
+                                    await deleteMilestone(m.uid);
                                     onChange();
                                 }}
                                 className="text-gray-400 hover:text-red-500"
@@ -255,14 +325,5 @@ const MetricsPanels: React.FC<Props> = ({
         </div>
     );
 };
-
-// The API addresses key results / milestones by uid; older callers used a
-// numeric id. Keep a single shim so a future switch is one edit.
-function krNumericId(kr: KeyResult): any {
-    return kr.uid;
-}
-function msNumericId(m: Milestone): any {
-    return m.uid;
-}
 
 export default MetricsPanels;

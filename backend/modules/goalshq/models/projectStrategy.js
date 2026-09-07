@@ -3,9 +3,10 @@
 const { DataTypes } = require('sequelize');
 
 /**
- * goalshq_project_strategies — links a tududi Project to a GoalsHQ Strategy.
- * A project belongs to at most one strategy (unique project_id). Stored as our
- * own join table so tududi's `projects` schema is never modified.
+ * goalshq_project_strategies — many-to-many link between a tududi Project and
+ * a GoalsHQ Strategy. A project may serve several strategies at once; the same
+ * (strategy_id, project_id) pair may only be linked once. Stored as our own
+ * join table so tududi's `projects` schema is never modified.
  */
 module.exports = (sequelize) => {
     const ProjectStrategy = sequelize.define(
@@ -23,7 +24,6 @@ module.exports = (sequelize) => {
             project_id: {
                 type: DataTypes.INTEGER,
                 allowNull: false,
-                unique: true,
             },
             user_id: {
                 type: DataTypes.INTEGER,
@@ -40,7 +40,12 @@ module.exports = (sequelize) => {
             indexes: [
                 { fields: ['strategy_id'] },
                 { fields: ['user_id'] },
-                { unique: true, fields: ['project_id'] },
+                { fields: ['project_id'] },
+                {
+                    unique: true,
+                    fields: ['strategy_id', 'project_id'],
+                    name: 'goalshq_project_strategies_strategy_project_uidx',
+                },
             ],
         }
     );

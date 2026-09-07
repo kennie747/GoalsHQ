@@ -1,14 +1,18 @@
 const request = require('supertest');
 const app = require('../../app');
-const { Goal, Project, Task } = require('../../models');
 const {
+    Goal,
+    Project,
+    Task,
     GoalshqStrategy,
     GoalshqProjectStrategy,
     GoalshqGoalSettings,
+    GoalshqProjectSettings,
     GoalshqKeyResult,
     GoalshqMilestone,
     GoalshqProgressSnapshot,
-} = require('../../modules/goalshq/models');
+} = require('../../models');
+const rollup = require('../../modules/goalshq/operations/rollup');
 const { createTestUser } = require('../helpers/testUtils');
 
 async function clearGoalshq() {
@@ -70,11 +74,11 @@ describe('GoalsHQ routes', () => {
         return Task.bulkCreate(rows);
     }
 
-    describe('GET /api/goalshq/config', () => {
-        it('reports enabled', async () => {
-            const res = await agent.get('/api/goalshq/config');
+    describe('GET /api/current_user', () => {
+        it('reports GoalsHQ enablement via features.goalshq_enabled', async () => {
+            const res = await agent.get('/api/current_user');
             expect(res.status).toBe(200);
-            expect(res.body.enabled).toBe(true);
+            expect(res.body.user.features.goalshq_enabled).toBe(true);
         });
     });
 
@@ -122,6 +126,116 @@ describe('GoalsHQ routes', () => {
             expect(body.percent).toBeGreaterThan(0);
             expect(['on_track', 'at_risk', 'off_track']).toContain(body.health);
             expect(body.trend.length).toBeGreaterThanOrEqual(1);
+        });
+
+        it('counts subtasks alongside top-level tasks in the rollup', async () => {
+            const goal = await makeGoal();
+            const project = await makeProject('With subtasks', goal.id);
+            // 1 top-level task, not done, with 3 subtasks (2 done) sharing its project_id
+            const [parent] = await makeTasks(project.id, 1, 0);
+            await Task.bulkCreate([
+                {
+                    user_id: user.id,
+                    name: 'sub-1',
+                    project_id: project.id,
+                    parent_task_id: parent.id,
+                    status: Task.STATUS.DONE,
+                    completed_at: new Date(),
+                },
+                {
+                    user_id: user.id,
+                    name: 'sub-2',
+                    project_id: project.id,
+                    parent_task_id: parent.id,
+                    status: Task.STATUS.DONE,
+                    completed_at: new Date(),
+                },
+                {
+                    user_id: user.id,
+                    name: 'sub-3',
+                    project_id: project.id,
+                    parent_task_id: parent.id,
+                    status: Task.STATUS.NOT_STARTED,
+                },
+            ]);
+
+            const recompute = await agent.post(
+                `/api/goalshq/goals/${goal.uid}/recompute`
+            );
+            expect(recompute.status).toBe(200);
+
+            const detail = await agent.get(`/api/goalshq/goals/${goal.uid}`);
+            const directProject = detail.body.goal.direct_projects.find(
+                (p) => p.uid === project.uid
+            );
+            // 1 not-done parent + 2 done subtasks + 1 not-done subtask = 2/4 = 50%
+            // (would be 0/1 = 0% if subtasks were still invisible to the rollup)
+            expect(directProject.percent).toBe(50);
+        });
+
+        it('a project in metric mode uses its own key results, and a strategy prefers that over the task percent', async () => {
+            const goal = await makeGoal();
+            const project = await makeProject('P', goal.id);
+            await makeTasks(project.id, 4, 0); // 0% by task completion
+
+            const strategyCreated = await agent
+                .post(`/api/goalshq/goals/${goal.uid}/strategies`)
+                .send({ name: 'S1' });
+            const strategyUid = strategyCreated.body.strategy.uid;
+            await agent
+                .post(`/api/goalshq/strategies/${strategyUid}/projects`)
+                .send({ project_uid: project.uid });
+
+            await agent
+                .patch(`/api/goalshq/projects/${project.uid}/settings`)
+                .send({ progress_mode: 'metric' });
+            await agent
+                .post(`/api/goalshq/project/${project.uid}/key-results`)
+                .send({
+                    name: 'Signups',
+                    direction: 'increase',
+                    baseline_value: 0,
+                    target_value: 10,
+                    current_value: 7,
+                });
+
+            const projectDetail = await agent.get(
+                `/api/goalshq/projects/${project.uid}`
+            );
+            // 7/10 signups = 70%, not 0% (the task-completion percent)
+            expect(projectDetail.body.project.percent).toBe(70);
+
+            const strategyDetail = await agent.get(
+                `/api/goalshq/strategies/${strategyUid}`
+            );
+            // strategy's single linked project contributes its measured 70%,
+            // not its 0% task-completion percent
+            expect(strategyDetail.body.strategy.percent).toBe(70);
+        });
+
+        it('a task-level key result is informational only and does not affect any rollup', async () => {
+            const goal = await makeGoal();
+            const project = await makeProject('P', goal.id);
+            const [task] = await makeTasks(project.id, 1, 0);
+
+            const created = await agent
+                .post(`/api/goalshq/task/${task.uid}/key-results`)
+                .send({
+                    name: 'Outreaches sent',
+                    direction: 'increase',
+                    baseline_value: 0,
+                    target_value: 20,
+                    current_value: 12,
+                });
+            expect(created.status).toBe(201);
+            expect(created.body.key_result.current_value).toBe(12);
+
+            const detail = await agent.get(`/api/goalshq/goals/${goal.uid}`);
+            const directProject = detail.body.goal.direct_projects.find(
+                (p) => p.uid === project.uid
+            );
+            // the task is still not-done -> project percent unaffected by the KR
+            expect(directProject.percent).toBe(0);
         });
 
         it('metric mode uses key results', async () => {
@@ -180,6 +294,261 @@ describe('GoalsHQ routes', () => {
             );
             expect(recompute.body.goal.percent).toBe(50);
         });
+
+        describe('milestone "Expand into tasks" (Phase F)', () => {
+            it('creates a goal-linked task from a goal-parented milestone', async () => {
+                const goal = await makeGoal();
+                const created = await agent
+                    .post(`/api/goalshq/goal/${goal.uid}/milestones`)
+                    .send({ title: 'Ship v1', target_date: '2027-01-01' });
+
+                const res = await agent.post(
+                    `/api/goalshq/milestones/${created.body.milestone.uid}/expand`
+                );
+                expect(res.status).toBe(201);
+                expect(res.body.task.name).toBe('Ship v1');
+
+                const task = await Task.findOne({
+                    where: { uid: res.body.task.uid },
+                });
+                expect(task.goal_id).toBe(goal.id);
+                expect(task.project_id).toBeNull();
+            });
+
+            it('creates a project-linked task from a project-parented milestone', async () => {
+                const goal = await makeGoal();
+                const project = await makeProject('P', goal.id);
+                const created = await agent
+                    .post(`/api/goalshq/project/${project.uid}/milestones`)
+                    .send({ title: 'Beta release' });
+
+                const res = await agent.post(
+                    `/api/goalshq/milestones/${created.body.milestone.uid}/expand`
+                );
+                expect(res.status).toBe(201);
+
+                const task = await Task.findOne({
+                    where: { uid: res.body.task.uid },
+                });
+                expect(task.project_id).toBe(project.id);
+            });
+
+            it("creates a task linked to the strategy's own goal from a strategy-parented milestone", async () => {
+                const goal = await makeGoal();
+                const strategyCreated = await agent
+                    .post(`/api/goalshq/goals/${goal.uid}/strategies`)
+                    .send({ name: 'S1' });
+                const strategyUid = strategyCreated.body.strategy.uid;
+
+                const created = await agent
+                    .post(`/api/goalshq/strategy/${strategyUid}/milestones`)
+                    .send({ title: 'Pilot done' });
+
+                const res = await agent.post(
+                    `/api/goalshq/milestones/${created.body.milestone.uid}/expand`
+                );
+                expect(res.status).toBe(201);
+
+                const task = await Task.findOne({
+                    where: { uid: res.body.task.uid },
+                });
+                expect(task.goal_id).toBe(goal.id);
+            });
+
+            it('404s expanding a milestone that does not belong to the current user', async () => {
+                const otherUser = await createTestUser({
+                    email: 'goalshq-other@example.com',
+                });
+                const otherGoal = await Goal.create({
+                    user_id: otherUser.id,
+                    title: 'Not mine',
+                    status: 'active',
+                });
+                const otherAgent = request.agent(app);
+                await otherAgent.post('/api/login').send({
+                    email: 'goalshq-other@example.com',
+                    password: 'password123',
+                });
+                const created = await otherAgent
+                    .post(`/api/goalshq/goal/${otherGoal.uid}/milestones`)
+                    .send({ title: "Someone else's milestone" });
+
+                const res = await agent.post(
+                    `/api/goalshq/milestones/${created.body.milestone.uid}/expand`
+                );
+                expect(res.status).toBe(404);
+            });
+        });
+
+        describe('KR automation hooks (auto_source: tasks_done_count)', () => {
+            it("auto-populates a project-level KR current_value from that project's done task count", async () => {
+                const goal = await makeGoal();
+                const project = await makeProject('P', goal.id);
+                await makeTasks(project.id, 5, 3); // 3 done of 5
+
+                await agent
+                    .patch(`/api/goalshq/projects/${project.uid}/settings`)
+                    .send({ progress_mode: 'metric' });
+                const created = await agent
+                    .post(`/api/goalshq/project/${project.uid}/key-results`)
+                    .send({
+                        name: 'Tasks shipped',
+                        direction: 'increase',
+                        baseline_value: 0,
+                        target_value: 5,
+                        current_value: 0,
+                        auto_source: 'tasks_done_count',
+                    });
+                expect(created.status).toBe(201);
+                expect(created.body.key_result.auto_source).toBe(
+                    'tasks_done_count'
+                );
+
+                await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+
+                const projectDetail = await agent.get(
+                    `/api/goalshq/projects/${project.uid}`
+                );
+                const kr = projectDetail.body.project.key_results.find(
+                    (k) => k.uid === created.body.key_result.uid
+                );
+                expect(kr.current_value).toBe(3);
+                // metric mode: 3/5 = 60%
+                expect(projectDetail.body.project.percent).toBe(60);
+            });
+
+            it('auto-populates a strategy-level KR from the done task count across its linked projects only', async () => {
+                const goal = await makeGoal();
+                const linked = await makeProject('Linked', goal.id);
+                const unlinked = await makeProject('Unlinked', goal.id); // stays direct
+                await makeTasks(linked.id, 4, 3); // 3 done
+                await makeTasks(unlinked.id, 4, 4); // would be 4 more if wrongly included
+
+                const strategyCreated = await agent
+                    .post(`/api/goalshq/goals/${goal.uid}/strategies`)
+                    .send({ name: 'S1', progress_mode: 'metric' });
+                const strategyUid = strategyCreated.body.strategy.uid;
+                await agent
+                    .post(`/api/goalshq/strategies/${strategyUid}/projects`)
+                    .send({ project_uid: linked.uid });
+
+                const created = await agent
+                    .post(`/api/goalshq/strategy/${strategyUid}/key-results`)
+                    .send({
+                        name: 'Tasks shipped',
+                        direction: 'increase',
+                        baseline_value: 0,
+                        target_value: 3,
+                        current_value: 0,
+                        auto_source: 'tasks_done_count',
+                    });
+
+                await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+
+                const strategyDetail = await agent.get(
+                    `/api/goalshq/strategies/${strategyUid}`
+                );
+                const kr = strategyDetail.body.strategy.key_results.find(
+                    (k) => k.uid === created.body.key_result.uid
+                );
+                expect(kr.current_value).toBe(3);
+            });
+
+            it('auto-populates a goal-level KR from done tasks across every project plus direct goal tasks', async () => {
+                const goal = await makeGoal();
+                const project = await makeProject('P', goal.id);
+                await makeTasks(project.id, 4, 2); // 2 done via project
+                await makeTasks(null, 3, 1, goal.id); // 1 done direct-on-goal
+
+                await agent
+                    .patch(`/api/goalshq/goals/${goal.uid}/settings`)
+                    .send({ progress_mode: 'metric' });
+                const created = await agent
+                    .post(`/api/goalshq/goal/${goal.uid}/key-results`)
+                    .send({
+                        name: 'Total tasks shipped',
+                        direction: 'increase',
+                        baseline_value: 0,
+                        target_value: 3,
+                        current_value: 0,
+                        auto_source: 'tasks_done_count',
+                    });
+
+                const recompute = await agent.post(
+                    `/api/goalshq/goals/${goal.uid}/recompute`
+                );
+                expect(recompute.body.goal.percent).toBe(100); // 3/3
+
+                const goalDetail = await agent.get(
+                    `/api/goalshq/goals/${goal.uid}`
+                );
+                const kr = goalDetail.body.goal.key_results.find(
+                    (k) => k.uid === created.body.key_result.uid
+                );
+                expect(kr.current_value).toBe(3);
+            });
+
+            it('never touches a task-parented KR even when auto_source is set (informational only, per AF3)', async () => {
+                const goal = await makeGoal();
+                const project = await makeProject('P', goal.id);
+                const [task] = await makeTasks(project.id, 1, 0);
+
+                const created = await agent
+                    .post(`/api/goalshq/task/${task.uid}/key-results`)
+                    .send({
+                        name: 'Outreaches sent',
+                        direction: 'increase',
+                        baseline_value: 0,
+                        target_value: 20,
+                        current_value: 12,
+                        auto_source: 'tasks_done_count',
+                    });
+                expect(created.status).toBe(201);
+
+                await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+
+                const kr = await GoalshqKeyResult.findOne({
+                    where: { uid: created.body.key_result.uid },
+                });
+                expect(kr.current_value).toBe(12); // untouched
+            });
+
+            it('updating a KR to auto_source: manual stops further automatic updates', async () => {
+                const goal = await makeGoal();
+                const project = await makeProject('P', goal.id);
+                await makeTasks(project.id, 5, 3);
+
+                const created = await agent
+                    .post(`/api/goalshq/project/${project.uid}/key-results`)
+                    .send({
+                        name: 'Tasks shipped',
+                        direction: 'increase',
+                        baseline_value: 0,
+                        target_value: 5,
+                        current_value: 0,
+                        auto_source: 'tasks_done_count',
+                    });
+                await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+
+                await agent
+                    .patch(
+                        `/api/goalshq/key-results/${created.body.key_result.uid}`
+                    )
+                    .send({ auto_source: 'manual', current_value: 99 });
+
+                // more tasks complete, but the KR is manual now
+                await Task.update(
+                    { status: Task.STATUS.DONE, completed_at: new Date() },
+                    { where: { project_id: project.id } }
+                );
+                await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+
+                const kr = await GoalshqKeyResult.findOne({
+                    where: { uid: created.body.key_result.uid },
+                });
+                expect(kr.current_value).toBe(99); // untouched by the recompute
+            });
+        });
     });
 
     describe('authorization scoping', () => {
@@ -235,7 +604,82 @@ describe('GoalsHQ routes', () => {
             expect(list.body.strategies).toHaveLength(0);
         });
 
-        it('a project belongs to at most one strategy', async () => {
+        it('the goals list exposes which projects (by uid) each strategy is linked to', async () => {
+            const goal = await makeGoal();
+            const projectA = await makeProject('A', goal.id);
+            const projectB = await makeProject('B', goal.id);
+
+            const s1 = (
+                await agent
+                    .post(`/api/goalshq/goals/${goal.uid}/strategies`)
+                    .send({ name: 'S1' })
+            ).body.strategy.uid;
+            const s2 = (
+                await agent
+                    .post(`/api/goalshq/goals/${goal.uid}/strategies`)
+                    .send({ name: 'S2' })
+            ).body.strategy.uid;
+
+            await agent
+                .post(`/api/goalshq/strategies/${s1}/projects`)
+                .send({ project_uid: projectA.uid });
+            await agent
+                .post(`/api/goalshq/strategies/${s1}/projects`)
+                .send({ project_uid: projectB.uid });
+            // s2 is linked to projectA too, to confirm many-to-many attribution
+            await agent
+                .post(`/api/goalshq/strategies/${s2}/projects`)
+                .send({ project_uid: projectA.uid });
+
+            const list = await agent.get('/api/goalshq/goals');
+            const goalSummary = list.body.goals.find((g) => g.uid === goal.uid);
+            const strat1 = goalSummary.strategies.find((s) => s.uid === s1);
+            const strat2 = goalSummary.strategies.find((s) => s.uid === s2);
+
+            expect(strat1.project_uids.sort()).toEqual(
+                [projectA.uid, projectB.uid].sort()
+            );
+            expect(strat2.project_uids).toEqual([projectA.uid]);
+
+            expect(strat1.projects.map((p) => p.uid).sort()).toEqual(
+                [projectA.uid, projectB.uid].sort()
+            );
+            expect(
+                strat1.projects.find((p) => p.uid === projectA.uid).name
+            ).toBe('A');
+            expect(strat2.projects).toEqual([{ uid: projectA.uid, name: 'A' }]);
+        });
+
+        it('the goals list exposes projects_count and tasks_count, deduped across direct and strategy-linked projects', async () => {
+            const goal = await makeGoal();
+            const projectA = await makeProject('A', goal.id);
+            const projectB = await makeProject('B', goal.id);
+            // both projects are DIRECT (goal_id set) as well as strategy-linked below,
+            // so projects_count must dedupe rather than double-count.
+            await makeTasks(projectA.id, 3, 1);
+            await makeTasks(projectB.id, 2, 0);
+            await makeTasks(null, 1, 0, goal.id); // a task attached straight to the goal
+
+            const s1 = (
+                await agent
+                    .post(`/api/goalshq/goals/${goal.uid}/strategies`)
+                    .send({ name: 'S1' })
+            ).body.strategy.uid;
+            await agent
+                .post(`/api/goalshq/strategies/${s1}/projects`)
+                .send({ project_uid: projectA.uid });
+            await agent
+                .post(`/api/goalshq/strategies/${s1}/projects`)
+                .send({ project_uid: projectB.uid });
+
+            const list = await agent.get('/api/goalshq/goals');
+            const goalSummary = list.body.goals.find((g) => g.uid === goal.uid);
+
+            expect(goalSummary.projects_count).toBe(2);
+            expect(goalSummary.tasks_count).toBe(3 + 2 + 1);
+        });
+
+        it('a project can serve multiple strategies at once', async () => {
             const goal = await makeGoal();
             const project = await makeProject('P', goal.id);
             const s1 = (
@@ -259,7 +703,62 @@ describe('GoalsHQ routes', () => {
             const links = await GoalshqProjectStrategy.findAll({
                 where: { project_id: project.id },
             });
+            expect(links).toHaveLength(2);
+        });
+
+        it('re-linking to the same strategy updates weight instead of duplicating', async () => {
+            const goal = await makeGoal();
+            const project = await makeProject('P', goal.id);
+            const s1 = (
+                await agent
+                    .post(`/api/goalshq/goals/${goal.uid}/strategies`)
+                    .send({ name: 'S1' })
+            ).body.strategy.uid;
+
+            await agent
+                .post(`/api/goalshq/strategies/${s1}/projects`)
+                .send({ project_uid: project.uid, weight: 1 });
+            await agent
+                .post(`/api/goalshq/strategies/${s1}/projects`)
+                .send({ project_uid: project.uid, weight: 2 });
+
+            const links = await GoalshqProjectStrategy.findAll({
+                where: { project_id: project.id },
+            });
             expect(links).toHaveLength(1);
+            expect(links[0].weight).toBe(2);
+        });
+
+        it('moveProjectLink detaches from one strategy and attaches to another', async () => {
+            const goal = await makeGoal();
+            const project = await makeProject('P', goal.id);
+            const s1 = (
+                await agent
+                    .post(`/api/goalshq/goals/${goal.uid}/strategies`)
+                    .send({ name: 'S1' })
+            ).body.strategy.uid;
+            const s2 = (
+                await agent
+                    .post(`/api/goalshq/goals/${goal.uid}/strategies`)
+                    .send({ name: 'S2' })
+            ).body.strategy.uid;
+
+            await agent
+                .post(`/api/goalshq/strategies/${s1}/projects`)
+                .send({ project_uid: project.uid });
+
+            const move = await agent
+                .patch(
+                    `/api/goalshq/strategies/${s1}/projects/${project.uid}/move`
+                )
+                .send({ to_strategy_uid: s2 });
+            expect(move.status).toBe(200);
+
+            const links = await GoalshqProjectStrategy.findAll({
+                where: { project_id: project.id },
+            });
+            expect(links).toHaveLength(1);
+            expect(links[0].strategy_id).not.toBeNull();
         });
     });
 
@@ -278,6 +777,43 @@ describe('GoalsHQ routes', () => {
                 .post(`/api/goalshq/goals/${goal.uid}/strategies`)
                 .send({ name: 'S', importance: 9 });
             expect(res.status).toBe(400);
+        });
+    });
+
+    describe('gcOrphans', () => {
+        it('removes project-parented settings/key-results once the project is gone', async () => {
+            const goal = await makeGoal();
+            const project = await makeProject('Doomed', goal.id);
+
+            await agent
+                .patch(`/api/goalshq/projects/${project.uid}/settings`)
+                .send({ progress_mode: 'metric' });
+            await agent
+                .post(`/api/goalshq/project/${project.uid}/key-results`)
+                .send({
+                    name: 'X',
+                    direction: 'increase',
+                    baseline_value: 0,
+                    target_value: 10,
+                    current_value: 5,
+                });
+
+            // Bypass the app's own delete flow to simulate the project
+            // vanishing out from under GoalsHQ (SQLite runs with
+            // foreign_keys OFF, so a real delete wouldn't cascade either).
+            await Project.destroy({ where: { id: project.id } });
+
+            const removed = await rollup.gcOrphans();
+            expect(removed).toBeGreaterThan(0);
+
+            const settings = await GoalshqProjectSettings.findOne({
+                where: { project_id: project.id },
+            });
+            expect(settings).toBeNull();
+            const krs = await GoalshqKeyResult.findAll({
+                where: { parent_type: 'project', parent_id: project.id },
+            });
+            expect(krs).toHaveLength(0);
         });
     });
 });

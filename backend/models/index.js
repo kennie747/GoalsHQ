@@ -103,6 +103,24 @@ const CalendarToken = require('./calendar_token')(sequelize);
 const Goal = require('./goal')(sequelize);
 const Person = require('./person')(sequelize);
 const UserProjectArea = require('./user_project_area')(sequelize);
+const GoalshqStrategy = require('../modules/goalshq/models/strategy')(
+    sequelize
+);
+const GoalshqProjectStrategy =
+    require('../modules/goalshq/models/projectStrategy')(sequelize);
+const GoalshqGoalSettings = require('../modules/goalshq/models/goalSettings')(
+    sequelize
+);
+const GoalshqKeyResult = require('../modules/goalshq/models/keyResult')(
+    sequelize
+);
+const GoalshqMilestone = require('../modules/goalshq/models/milestone')(
+    sequelize
+);
+const GoalshqProgressSnapshot =
+    require('../modules/goalshq/models/progressSnapshot')(sequelize);
+const GoalshqProjectSettings =
+    require('../modules/goalshq/models/projectSettings')(sequelize);
 
 User.hasMany(Area, { foreignKey: 'user_id' });
 Area.belongsTo(User, { foreignKey: 'user_id' });
@@ -327,6 +345,96 @@ Person.hasMany(Task, {
 User.hasOne(Person, { foreignKey: 'linked_user_id', as: 'SelfPerson' });
 Person.belongsTo(User, { foreignKey: 'linked_user_id', as: 'LinkedUser' });
 
+// GoalsHQ associations — Strategy is a first-class peer of Goal/Project/Task
+// (see docs/goalshq/adr/0002-first-class-integration.md; supersedes the
+// isolation architecture in adr/0001).
+Goal.hasMany(GoalshqStrategy, { foreignKey: 'goal_id', as: 'Strategies' });
+GoalshqStrategy.belongsTo(Goal, { foreignKey: 'goal_id', as: 'Goal' });
+
+Goal.hasOne(GoalshqGoalSettings, {
+    foreignKey: 'goal_id',
+    as: 'GoalshqSettings',
+});
+GoalshqGoalSettings.belongsTo(Goal, { foreignKey: 'goal_id', as: 'Goal' });
+
+// Strategy <-> Project is many-to-many: a project may serve several
+// strategies at once (see goalshq_project_strategies migration
+// 20260905000001, which replaced the old one-strategy-per-project
+// constraint).
+GoalshqStrategy.belongsToMany(Project, {
+    through: GoalshqProjectStrategy,
+    foreignKey: 'strategy_id',
+    otherKey: 'project_id',
+    as: 'Projects',
+});
+Project.belongsToMany(GoalshqStrategy, {
+    through: GoalshqProjectStrategy,
+    foreignKey: 'project_id',
+    otherKey: 'strategy_id',
+    as: 'Strategies',
+});
+GoalshqProjectStrategy.belongsTo(GoalshqStrategy, {
+    foreignKey: 'strategy_id',
+    as: 'Strategy',
+});
+GoalshqProjectStrategy.belongsTo(Project, {
+    foreignKey: 'project_id',
+    as: 'Project',
+});
+
+// Project gets the same measurable tier as Goal/Strategy (Phase A Follow-up).
+Project.hasOne(GoalshqProjectSettings, {
+    foreignKey: 'project_id',
+    as: 'GoalshqSettings',
+});
+GoalshqProjectSettings.belongsTo(Project, {
+    foreignKey: 'project_id',
+    as: 'Project',
+});
+
+// KeyResult / Milestone / ProgressSnapshot are polymorphic (parent_type +
+// parent_id, no single-table FK possible) — scoped hasMany associations give
+// ORM convenience (goal.getKeyResults(), include: 'KeyResults') without a real
+// DB-level FK constraint, since parent_id can point at Goal, GoalshqStrategy,
+// or Project depending on parent_type. `constraints: false` is required here
+// so sequelize.sync() (used by the test suite) doesn't try to declare a
+// single FK on parent_id pointing at multiple different tables.
+for (const [Parent, parentType] of [
+    [Goal, 'goal'],
+    [GoalshqStrategy, 'strategy'],
+    [Project, 'project'],
+]) {
+    Parent.hasMany(GoalshqKeyResult, {
+        foreignKey: 'parent_id',
+        scope: { parent_type: parentType },
+        as: 'KeyResults',
+        constraints: false,
+    });
+    Parent.hasMany(GoalshqMilestone, {
+        foreignKey: 'parent_id',
+        scope: { parent_type: parentType },
+        as: 'Milestones',
+        constraints: false,
+    });
+    Parent.hasMany(GoalshqProgressSnapshot, {
+        foreignKey: 'parent_id',
+        scope: { parent_type: parentType },
+        as: 'ProgressSnapshots',
+        constraints: false,
+    });
+}
+
+// Task gets KeyResult only (the "batch/quota task" primitive) — not
+// Milestone (redundant with a task's own due_date/status) or ProgressSnapshot
+// (tasks are too short-lived/numerous to be worth daily-snapshotting). A
+// task-parented KeyResult is informational only and never feeds a rollup.
+Task.hasMany(GoalshqKeyResult, {
+    foreignKey: 'parent_id',
+    scope: { parent_type: 'task' },
+    as: 'KeyResults',
+    constraints: false,
+});
+
 // Auto-create a self-person for every new user
 User.addHook('afterCreate', async (user, options) => {
     try {
@@ -472,4 +580,11 @@ module.exports = {
     CalendarToken,
     Person,
     UserProjectArea,
+    GoalshqStrategy,
+    GoalshqProjectStrategy,
+    GoalshqGoalSettings,
+    GoalshqKeyResult,
+    GoalshqMilestone,
+    GoalshqProgressSnapshot,
+    GoalshqProjectSettings,
 };

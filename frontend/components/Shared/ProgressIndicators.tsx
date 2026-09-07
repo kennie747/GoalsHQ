@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { GoalshqHealth, ProgressSnapshot } from '../../../entities/GoalsHq';
+import { GoalshqHealth } from '../../entities/GoalSettings';
+import { ProgressSnapshot } from '../../entities/ProgressSnapshot';
 
 export const HEALTH_STYLES: Record<GoalshqHealth, string> = {
     on_track:
@@ -11,29 +12,37 @@ export const HEALTH_STYLES: Record<GoalshqHealth, string> = {
     no_data: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400',
 };
 
-const HEALTH_BAR: Record<GoalshqHealth, string> = {
-    on_track: 'bg-green-500',
-    at_risk: 'bg-amber-500',
-    off_track: 'bg-red-500',
-    no_data: 'bg-gray-400',
-};
+// Matches the fill color tududi's own progress bars already use everywhere
+// else in the app (see e.g. frontend/components/Project/ProjectItem.tsx's
+// completion-percentage bar: `bg-blue-500` on a `bg-gray-200`/`bg-gray-700`
+// track) — GoalsHQ bars previously used a separate green/amber/red/gray
+// health palette here, which looked inconsistent with the rest of the app.
+// Health is still communicated by `HealthChip` (the colored pill), just not
+// duplicated onto the bar fill itself.
+const PROGRESS_FILL = 'bg-blue-500';
 
 export const ProgressBar: React.FC<{
     percent: number | null;
     health?: GoalshqHealth;
     className?: string;
-}> = ({ percent, health = 'no_data', className = '' }) => {
+}> = ({ percent, className = 'w-full' }) => {
+    // `className` (not a hardcoded `w-full` here) carries the width, so a
+    // caller's own width utility (e.g. `w-24`) never has to fight a
+    // duplicate `w-full` for the cascade — Tailwind's compiled stylesheet
+    // orders utilities by its own internal rules, not by className
+    // attribute order, so two width classes on one element is a real bug,
+    // not just redundant.
     const pct = percent == null ? 0 : Math.max(0, Math.min(100, percent));
     return (
         <div
-            className={`h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700 ${className}`}
+            className={`h-2 rounded-full bg-gray-200 dark:bg-gray-700 ${className}`}
             role="progressbar"
             aria-valuenow={Math.round(pct)}
             aria-valuemin={0}
             aria-valuemax={100}
         >
             <div
-                className={`h-2 rounded-full ${HEALTH_BAR[health]}`}
+                className={`h-2 rounded-full ${PROGRESS_FILL} transition-all duration-300`}
                 style={{ width: `${pct}%` }}
             />
         </div>

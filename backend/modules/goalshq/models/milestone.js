@@ -4,8 +4,14 @@ const { DataTypes } = require('sequelize');
 const { uid } = require('../../../utils/uid');
 
 /**
- * goalshq_milestones — polymorphic checkpoints attached to a goal or a strategy.
- * Drives `progress_mode: 'milestones'` (achieved / total).
+ * goalshq_milestones — polymorphic checkpoints attached to a goal, strategy,
+ * or project (parent_type). Drives `progress_mode: 'milestones'` (achieved /
+ * total). Deliberately NOT extended to Task — a task already has a due date
+ * and a status, so a task-level Milestone would be a redundant second way to
+ * say the same thing (see docs/goalshq/adr/0002-first-class-integration.md,
+ * Phase A Follow-up AF3). Scoped hasMany associations from
+ * Goal/GoalshqStrategy/Project are declared in backend/models/index.js (no
+ * DB-level FK on parent_id — see gcOrphans()).
  */
 module.exports = (sequelize) => {
     const Milestone = sequelize.define(
@@ -23,7 +29,7 @@ module.exports = (sequelize) => {
                 defaultValue: uid,
             },
             parent_type: {
-                type: DataTypes.ENUM('goal', 'strategy'),
+                type: DataTypes.ENUM('goal', 'strategy', 'project'),
                 allowNull: false,
             },
             parent_id: {

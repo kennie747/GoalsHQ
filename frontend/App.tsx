@@ -19,6 +19,8 @@ import TagDetails from './components/Tag/TagDetails';
 import Tags from './components/Tags';
 import GoalDetails from './components/Goal/GoalDetails';
 import Goals from './components/Goals';
+import StrategyOverview from './components/Strategy/StrategyOverview';
+import StrategyDetail from './components/Strategy/StrategyDetail';
 import Views from './components/Views';
 import ViewDetail from './components/ViewDetail';
 import Notes from './components/Notes';
@@ -49,8 +51,6 @@ import { invalidateProfileCache } from './utils/profileService';
 import { notifySwSession, notifySwClearCache } from './utils/swUtils';
 // Lazy load Tasks component to prevent issues with tags loading
 const Tasks = lazy(() => import('./components/Tasks'));
-// goalshq integration hook
-const GoalsHqApp = lazy(() => import('./components/GoalsHQ/GoalsHqApp'));
 
 const App: React.FC = () => {
     const { i18n } = useTranslation();
@@ -102,6 +102,9 @@ const App: React.FC = () => {
                 );
                 useStore.getState().userSettingsStore.setShowTaskContextMenu(
                     data.user.ui_settings?.appearance?.showTaskContextMenu === true
+                );
+                useStore.getState().userSettingsStore.setGoalshqEnabled(
+                    data.user.features?.goalshq_enabled !== false
                 );
             } else {
                 setCurrentUser(null);
@@ -309,6 +312,14 @@ const App: React.FC = () => {
                                 path="/goal/:uidSlug"
                                 element={<GoalDetails />}
                             />
+                            <Route
+                                path="/strategy"
+                                element={<StrategyOverview />}
+                            />
+                            <Route
+                                path="/strategy/:uidSlug"
+                                element={<StrategyDetail />}
+                            />
                             <Route path="/views" element={<Views />} />
                             <Route
                                 path="/views/:uid"
@@ -363,11 +374,6 @@ const App: React.FC = () => {
                                         <Navigate to="/today" replace />
                                     )
                                 }
-                            />
-                            {/* goalshq integration hook */}
-                            <Route
-                                path="/goalshq/*"
-                                element={<GoalsHqApp />}
                             />
                             <Route path="*" element={<NotFound />} />
                         </Route>

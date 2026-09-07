@@ -1,13 +1,13 @@
 'use strict';
 
-const t = require('./core/tududi');
+const { sequelize, Task, GoalshqStrategy } = require('../../models');
+const errors = require('../../shared/errors');
 const repo = require('./repository');
 const rollup = require('./operations/rollup');
 const math = require('./operations/progress-math');
 const v = require('./validation');
 const s = require('./core/serializers');
 
-const { errors } = t;
 const { NotFoundError, ValidationError } = errors;
 
 const STALE_MINUTES = parseInt(process.env.GOALSHQ_STALE_MINUTES || '20', 10);
@@ -43,12 +43,95 @@ async function listGoals(userId, { recompute = true } = {}) {
         repo.strategiesByGoalIds(userId, goalIds),
     ]);
 
+    // Batch-resolve which projects (by uid) each strategy is linked to, so the
+    // frontend can attribute a task to its Strategy (not just its Goal) without
+    // an extra round trip per strategy. One query for the links, one for the
+    // project uids — never a per-strategy loop.
+    const allStrategyIds = [...strategyMap.values()]
+        .flat()
+        .map((strat) => strat.id);
+    const linksByStrategy = await repo.linksForStrategies(allStrategyIds);
+    const allLinkedProjectIds = [
+        ...new Set([...linksByStrategy.values()].flat()),
+    ];
+    const linkedProjects = await repo.projectsByIds(
+        userId,
+        allLinkedProjectIds
+    );
+    const projectUidById = new Map(linkedProjects.map((p) => [p.id, p.uid]));
+    const projectRefById = new Map(
+        linkedProjects.map((p) => [p.id, { uid: p.uid, name: p.name }])
+    );
+    const projectUidsByStrategy = new Map(
+        [...linksByStrategy.entries()].map(([strategyId, projectIds]) => [
+            strategyId,
+            projectIds.map((pid) => projectUidById.get(pid)).filter(Boolean),
+        ])
+    );
+    const projectsByStrategy = new Map(
+        [...linksByStrategy.entries()].map(([strategyId, projectIds]) => [
+            strategyId,
+            projectIds.map((pid) => projectRefById.get(pid)).filter(Boolean),
+        ])
+    );
+
+    // Stats-footer counts (Strategy overview cards): projects/tasks associated
+    // with a goal either directly (goal_id FK) or through any of its
+    // strategies' project links — deduped, since Phase A's many-to-many means
+    // a project can reach a goal both ways. Tasks include subtasks, matching
+    // taskCountsByProject's existing (Phase A Follow-up AF1) convention.
+    const strategyIdsByGoal = new Map(
+        [...strategyMap.entries()].map(([goalId, strats]) => [
+            goalId,
+            strats.map((strat) => strat.id),
+        ])
+    );
+    const directProjects = await repo.projectsForGoalIds(userId, goalIds);
+    const directProjectIdsByGoal = new Map();
+    for (const p of directProjects) {
+        const list = directProjectIdsByGoal.get(p.goal_id) || [];
+        list.push(p.id);
+        directProjectIdsByGoal.set(p.goal_id, list);
+    }
+    const projectIdsByGoal = new Map();
+    for (const goalId of goalIds) {
+        const ids = new Set(directProjectIdsByGoal.get(goalId) || []);
+        for (const stratId of strategyIdsByGoal.get(goalId) || []) {
+            for (const pid of linksByStrategy.get(stratId) || []) ids.add(pid);
+        }
+        projectIdsByGoal.set(goalId, ids);
+    }
+    const allAssociatedProjectIds = [
+        ...new Set([...projectIdsByGoal.values()].flatMap((set) => [...set])),
+    ];
+    const [directTaskCountsByGoal, taskCountsByProject] = await Promise.all([
+        repo.taskCountsByGoalIds(goalIds),
+        repo.taskCountsByProject(allAssociatedProjectIds),
+    ]);
+    const projectsCountByGoal = new Map();
+    const tasksCountByGoal = new Map();
+    for (const goalId of goalIds) {
+        const projectIds = projectIdsByGoal.get(goalId) || new Set();
+        projectsCountByGoal.set(goalId, projectIds.size);
+        let tasks = directTaskCountsByGoal.get(goalId) || 0;
+        for (const pid of projectIds) {
+            tasks += taskCountsByProject.get(pid)?.total || 0;
+        }
+        tasksCountByGoal.set(goalId, tasks);
+    }
+
     return goals
         .map((g) =>
             s.serializeGoalSummary(
                 g,
                 settingsMap.get(g.id),
-                strategyMap.get(g.id) || []
+                strategyMap.get(g.id) || [],
+                {
+                    projectUidsByStrategy,
+                    projectsByStrategy,
+                    projectsCount: projectsCountByGoal.get(g.id) ?? 0,
+                    tasksCount: tasksCountByGoal.get(g.id) ?? 0,
+                }
             )
         )
         .sort(byRiskThenTitle);
@@ -170,6 +253,63 @@ async function updateGoalSettings(userId, uid, body) {
     await rollup.recomputeGoal(goal.id, { source: 'manual' });
     return s.serializeSettings(
         await repo.findOrCreateSettings(goal.id, userId)
+    );
+}
+
+/* --------------------------------------------------------- project settings */
+
+async function getProjectDetail(userId, uid) {
+    const project = await repo.projectByUid(userId, uid);
+    if (!project) throw new NotFoundError('Project not found');
+    if (project.goal_id) {
+        await rollup.recomputeGoal(project.goal_id, { source: 'on_read' });
+    }
+    const [settings, keyResults, milestones, snaps] = await Promise.all([
+        repo.findOrCreateProjectSettings(project.id, userId),
+        repo.keyResults('project', project.id),
+        repo.milestones('project', project.id),
+        repo.snapshots('project', project.id, { limit: 90 }),
+    ]);
+    return {
+        uid: project.uid,
+        name: project.name,
+        status: project.status,
+        settings: s.serializeSettings(settings),
+        percent:
+            settings.cached_percent == null
+                ? null
+                : Number(settings.cached_percent),
+        health: settings.cached_health || 'no_data',
+        key_results: keyResults.map(s.serializeKeyResult),
+        milestones: milestones.map(s.serializeMilestone),
+        trend: snaps.map(s.serializeSnapshot),
+    };
+}
+
+async function updateProjectSettings(userId, uid, body) {
+    const project = await repo.projectByUid(userId, uid);
+    if (!project) throw new NotFoundError('Project not found');
+    const settings = await repo.findOrCreateProjectSettings(project.id, userId);
+
+    v.assertEnum(body.progress_mode, v.PROJECT_PROGRESS_MODES, 'progress_mode');
+    v.assertImportance(body.importance);
+    v.assertPercent(body.manual_percent, 'manual_percent');
+
+    const updates = {};
+    if (body.progress_mode !== undefined)
+        updates.progress_mode = body.progress_mode;
+    if (body.importance !== undefined)
+        updates.importance = Number(body.importance);
+    if (body.manual_percent !== undefined)
+        updates.manual_percent =
+            body.manual_percent === null ? null : Number(body.manual_percent);
+
+    await settings.update(updates);
+    if (project.goal_id) {
+        await rollup.recomputeGoal(project.goal_id, { source: 'manual' });
+    }
+    return s.serializeSettings(
+        await repo.findOrCreateProjectSettings(project.id, userId)
     );
 }
 
@@ -296,12 +436,12 @@ async function deleteStrategy(userId, uid) {
     const strategy = await repo.strategyByUid(userId, uid);
     if (!strategy) throw new NotFoundError('Strategy not found');
     const goalId = strategy.goal_id;
-    await t.sequelize.transaction(async (transaction) => {
-        const {
-            GoalshqProjectStrategy,
-            GoalshqKeyResult,
-            GoalshqMilestone,
-        } = require('./models');
+    const {
+        GoalshqProjectStrategy,
+        GoalshqKeyResult,
+        GoalshqMilestone,
+    } = require('../../models');
+    await sequelize.transaction(async (transaction) => {
         await GoalshqProjectStrategy.destroy({
             where: { strategy_id: strategy.id },
             transaction,
@@ -350,14 +490,67 @@ async function unlinkProject(userId, strategyUid, projectUid) {
     return getStrategy(userId, strategyUid);
 }
 
+/**
+ * Explicit "detach from strategy A, attach to strategy B" — distinct from
+ * linkProject, which only ever adds/updates the (strategy, project) pair it's
+ * given and never touches any other strategy the project is linked to.
+ */
+async function moveProjectLink(userId, fromStrategyUid, projectUid, body) {
+    const fromStrategy = await repo.strategyByUid(userId, fromStrategyUid);
+    if (!fromStrategy) throw new NotFoundError('Strategy not found');
+    const project = await repo.projectByUid(userId, projectUid);
+    if (!project) throw new NotFoundError('Project not found');
+    const toStrategyUid = v.requireNonEmptyString(
+        body.to_strategy_uid,
+        'to_strategy_uid'
+    );
+    const toStrategy = await repo.strategyByUid(userId, toStrategyUid);
+    if (!toStrategy) throw new NotFoundError('Target strategy not found');
+
+    let weight = body.weight;
+    if (weight !== undefined) {
+        v.assertNumber(weight, 'weight');
+        weight = Number(weight);
+        if (weight <= 0) throw new ValidationError('weight must be positive');
+    }
+
+    await repo.moveProjectLink(
+        fromStrategy.id,
+        toStrategy.id,
+        project.id,
+        userId,
+        weight
+    );
+    await rollup.recomputeGoal(fromStrategy.goal_id, { source: 'manual' });
+    if (toStrategy.goal_id !== fromStrategy.goal_id) {
+        await rollup.recomputeGoal(toStrategy.goal_id, { source: 'manual' });
+    }
+    return getStrategy(userId, toStrategyUid);
+}
+
 /* ---------------------------------------------------- parent resolution */
 
-async function resolveParent(userId, parentType, uid) {
-    v.assertParentType(parentType);
+async function resolveParent(userId, parentType, uid, allowed) {
+    v.assertParentType(parentType, allowed);
     if (parentType === 'goal') {
         const goal = await repo.goalByUid(userId, uid);
         if (!goal) throw new NotFoundError('Goal not found');
         return { type: 'goal', id: goal.id, goalId: goal.id };
+    }
+    if (parentType === 'project') {
+        const project = await repo.projectByUid(userId, uid);
+        if (!project) throw new NotFoundError('Project not found');
+        return {
+            type: 'project',
+            id: project.id,
+            goalId: project.goal_id || null,
+        };
+    }
+    if (parentType === 'task') {
+        const task = await repo.taskByUid(userId, uid);
+        if (!task) throw new NotFoundError('Task not found');
+        // Informational only — never triggers a rollup recompute (see AF3).
+        return { type: 'task', id: task.id, goalId: null };
     }
     const strategy = await repo.strategyByUid(userId, uid);
     if (!strategy) throw new NotFoundError('Strategy not found');
@@ -367,15 +560,26 @@ async function resolveParent(userId, parentType, uid) {
 /* ------------------------------------------------------------- key results */
 
 async function listKeyResults(userId, parentType, uid) {
-    const parent = await resolveParent(userId, parentType, uid);
+    const parent = await resolveParent(
+        userId,
+        parentType,
+        uid,
+        v.KEY_RESULT_PARENT_TYPES
+    );
     const rows = await repo.keyResults(parent.type, parent.id);
     return rows.map(s.serializeKeyResult);
 }
 
 async function createKeyResult(userId, parentType, uid, body) {
-    const parent = await resolveParent(userId, parentType, uid);
+    const parent = await resolveParent(
+        userId,
+        parentType,
+        uid,
+        v.KEY_RESULT_PARENT_TYPES
+    );
     const name = v.requireNonEmptyString(body.name, 'name');
     v.assertEnum(body.direction, v.KR_DIRECTIONS, 'direction');
+    v.assertEnum(body.auto_source, v.KR_AUTO_SOURCES, 'auto_source');
     v.assertNumber(body.baseline_value, 'baseline_value');
     v.assertNumber(body.target_value, 'target_value');
     v.assertNumber(body.current_value, 'current_value');
@@ -390,12 +594,15 @@ async function createKeyResult(userId, parentType, uid, body) {
         name,
         unit: body.unit || null,
         direction: body.direction || 'increase',
+        auto_source: body.auto_source || 'manual',
         baseline_value: Number(body.baseline_value || 0),
         target_value: Number(body.target_value),
         current_value: Number(body.current_value || 0),
         sort_order: Number(body.sort_order || 0),
     });
-    await rollup.recomputeGoal(parent.goalId, { source: 'manual' });
+    if (parent.type !== 'task' && parent.goalId) {
+        await rollup.recomputeGoal(parent.goalId, { source: 'manual' });
+    }
     return s.serializeKeyResult(kr);
 }
 
@@ -403,6 +610,7 @@ async function updateKeyResult(userId, uid, body) {
     const kr = await repo.keyResultByUid(userId, uid);
     if (!kr) throw new NotFoundError('Key result not found');
     v.assertEnum(body.direction, v.KR_DIRECTIONS, 'direction');
+    v.assertEnum(body.auto_source, v.KR_AUTO_SOURCES, 'auto_source');
     v.assertNumber(body.baseline_value, 'baseline_value');
     v.assertNumber(body.target_value, 'target_value');
     v.assertNumber(body.current_value, 'current_value');
@@ -412,6 +620,7 @@ async function updateKeyResult(userId, uid, body) {
         updates.name = v.requireNonEmptyString(body.name, 'name');
     if (body.unit !== undefined) updates.unit = body.unit || null;
     if (body.direction !== undefined) updates.direction = body.direction;
+    if (body.auto_source !== undefined) updates.auto_source = body.auto_source;
     if (body.baseline_value !== undefined)
         updates.baseline_value = Number(body.baseline_value);
     if (body.target_value !== undefined)
@@ -462,7 +671,9 @@ async function createMilestone(userId, parentType, uid, body) {
         achieved_at: status === 'achieved' ? new Date() : null,
         sort_order: Number(body.sort_order || 0),
     });
-    await rollup.recomputeGoal(parent.goalId, { source: 'manual' });
+    if (parent.goalId) {
+        await rollup.recomputeGoal(parent.goalId, { source: 'manual' });
+    }
     return s.serializeMilestone(milestone);
 }
 
@@ -508,13 +719,65 @@ async function deleteMilestone(userId, uid) {
     await recomputeForParent(parent_type, parent_id, userId);
 }
 
+/**
+ * Phase F — "Expand into tasks": a manual, one-shot action that creates a
+ * single task from a milestone (name = milestone title, due_date = milestone
+ * target_date), linked into whatever scope the milestone already lives in.
+ * Deliberately not automatic and not AI-driven in this pass — see the Phase F
+ * plan entry for "Auto-expand coarse phase -> daily tasks near checkpoint".
+ */
+async function expandMilestone(userId, uid) {
+    const milestone = await repo.milestoneByUid(userId, uid);
+    if (!milestone) throw new NotFoundError('Milestone not found');
+
+    const taskData = {
+        user_id: userId,
+        name: milestone.title,
+        due_date: milestone.target_date || null,
+    };
+    if (milestone.parent_type === 'project') {
+        taskData.project_id = milestone.parent_id;
+    } else if (milestone.parent_type === 'goal') {
+        taskData.goal_id = milestone.parent_id;
+    } else if (milestone.parent_type === 'strategy') {
+        const strategy = await GoalshqStrategy.findOne({
+            where: { id: milestone.parent_id, user_id: userId },
+        });
+        if (strategy) taskData.goal_id = strategy.goal_id;
+    }
+
+    const task = await Task.create(taskData);
+    return {
+        uid: task.uid,
+        name: task.name,
+        due_date: task.due_date,
+    };
+}
+
 /* ---------------------------------------------------------------- recompute */
 
 async function recomputeForParent(parentType, parentId, userId) {
+    if (parentType === 'task') {
+        // Informational only — a task-parented KeyResult never feeds a
+        // rollup (see AF3 in docs/goalshq/adr/0002-first-class-integration.md).
+        return null;
+    }
     if (parentType === 'goal') {
         return rollup.recomputeGoal(parentId, { source: 'manual' });
     }
-    const strategy = await require('./models').GoalshqStrategy.findOne({
+    if (parentType === 'project') {
+        const { Project } = require('../../models');
+        const project = await Project.findOne({
+            where: { id: parentId, user_id: userId },
+        });
+        if (project && project.goal_id) {
+            return rollup.recomputeGoal(project.goal_id, {
+                source: 'manual',
+            });
+        }
+        return null;
+    }
+    const strategy = await require('../../models').GoalshqStrategy.findOne({
         where: { id: parentId, user_id: userId },
     });
     if (strategy) {
@@ -542,6 +805,8 @@ module.exports = {
     listGoals,
     getGoalDetail,
     updateGoalSettings,
+    getProjectDetail,
+    updateProjectSettings,
     listStrategies,
     createStrategy,
     getStrategy,
@@ -549,6 +814,7 @@ module.exports = {
     deleteStrategy,
     linkProject,
     unlinkProject,
+    moveProjectLink,
     listKeyResults,
     createKeyResult,
     updateKeyResult,
@@ -557,6 +823,7 @@ module.exports = {
     createMilestone,
     updateMilestone,
     deleteMilestone,
+    expandMilestone,
     recomputeGoal,
     recomputeStrategy,
 };

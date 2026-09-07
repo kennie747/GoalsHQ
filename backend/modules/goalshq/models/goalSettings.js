@@ -5,7 +5,7 @@ const { DataTypes } = require('sequelize');
 /**
  * goalshq_goal_settings — 1:1 extension of a tududi Goal holding the strategic
  * / measurement attributes core `goals` lacks. Row is created lazily the first
- * time GoalsHQ touches a goal.
+ * time GoalsHQ touches a goal. Associated to Goal in backend/models/index.js.
  */
 module.exports = (sequelize) => {
     const GoalSettings = sequelize.define(

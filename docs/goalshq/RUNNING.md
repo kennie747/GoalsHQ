@@ -110,17 +110,25 @@ npm start
 
 ## 4. Using GoalsHQ
 
-1. Enabled by default. Sidebar → **GoalsHQ** (below Insights) → `/goalshq`.
+1. Enabled by default. Sidebar → **Strategy** (just below Goals) → `/strategy`,
+   or open a goal directly (`/goal/:uidSlug`) — its Strategy section is
+   embedded right on the page. **Archive** (history of carryover decisions +
+   goal progress) sits directly below Strategy in the sidebar.
 2. GoalsHQ reads tududi's goals, so **create a Goal first** in tududi's own
    **Goals** section (give it a target date so health can be computed).
-3. On the goal's GoalsHQ page: add a **Strategy**, open it, **link projects**,
-   set **progress mode** + **importance**, add **key results** / **milestones**.
+3. On the goal's detail page: add a **Strategy** inline, open it (`/strategy/:uidSlug`),
+   **link projects** (multi-select), set **progress mode** + **importance**,
+   add **key results** (optionally `auto_source: tasks_done_count`) /
+   **milestones** (with a manual **Expand into task** button).
 4. Progress rolls up task → project → strategy → goal automatically (cron every
    15 min, on page load if stale, or **Recompute** /
    `POST /api/goalshq/goals/:uid/recompute`).
 
-Toggle off entirely: `GOALSHQ_ENABLED=false` in `backend/.env` → the route
-redirects to `/today` and the sidebar entry disappears.
+Toggle off entirely: `GOALSHQ_ENABLED=false` in `backend/.env` → `features.goalshq_enabled`
+comes back `false` from `/api/current_user`, the sidebar entries disappear, and
+`/api/goalshq/*` returns 404. The `/strategy` and `/archive` routes themselves
+stay registered either way (matching how `/goal/:uidSlug` doesn't redirect when
+empty) — only the sidebar links and API responses are gated.
 
 ---
 
@@ -183,7 +191,7 @@ be in `TUDUDI_ALLOWED_ORIGINS` or login will 401 / CORS-fail.
 | Login returns 401 through the proxy, or "CORS" errors in the console | frontend origin missing from `TUDUDI_ALLOWED_ORIGINS` in `backend/.env` |
 | `/api/*` calls 404 / connection refused from the frontend | `BACKEND_URL` in `scripts/dev.sh` doesn't match the backend `PORT` |
 | Port already in use | `lsof -ti tcp:8081 tcp:3003 \| xargs -r kill` |
-| GoalsHQ sidebar item / route missing | `GOALSHQ_ENABLED` is `false`, or `/api/goalshq/config` unreachable |
+| Strategy/Archive sidebar items missing | `GOALSHQ_ENABLED` is `false` — check `features.goalshq_enabled` on `GET /api/current_user` |
 | GoalsHQ percentages all `—` / `no_data` | no linked work yet, or the goal has no `target_date`; hit **Recompute** |
 | Migrations fail on a fresh DB | run `npm run db:init` first (creates base tables), then `npm run db:migrate` |
 | Playwright: "does not support chromium on ubuntu26.04" (sandbox only) | `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` + `npx playwright install chromium`; CI (ubuntu-latest) is unaffected |
@@ -209,5 +217,5 @@ Keep the fork current with upstream by **merging** (not rebasing):
 
 ```bash
 git fetch upstream && git checkout main && git merge upstream/main
-bash scripts/goalshq-verify.sh         # confirm the GoalsHQ add-on still holds
+bash scripts/goalshq-verify.sh         # sanity gate after touching GoalsHQ-adjacent shared files
 ```
