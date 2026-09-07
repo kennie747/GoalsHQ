@@ -2,9 +2,24 @@
 
 const OpenAI = require('openai');
 const moment = require('moment-timezone');
-const { User, Goal, Project, Area } = require('../../models');
+const { Op, fn, col, literal } = require('sequelize');
+const {
+    User,
+    Goal,
+    Project,
+    Area,
+    Task,
+    TaskCarryoverEvent,
+} = require('../../models');
 const { computeTaskMetrics } = require('../tasks/queries/metrics-computation');
 const { AppError } = require('../../shared/errors');
+const goalshqRepo = require('../goalshq/repository');
+const { isEnabled: isGoalshqEnabled } = require('../goalshq/service');
+const { keyResultPercent } = require('../goalshq/operations/progress-math');
+
+const AT_RISK_HEALTH = ['at_risk', 'off_track'];
+const MAX_CONTEXT_STRATEGIES = 8;
+const MAX_REPEAT_CARRYOVER_TASKS = 5;
 
 const PRIORITY_LABELS = { 0: 'low', 1: 'medium', 2: 'high' };
 const STATUS_LABELS = {
@@ -17,31 +32,126 @@ const STATUS_LABELS = {
     6: 'planned',
 };
 
+function parseExpiry(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isExpired(expiryDate) {
+    return expiryDate != null && Date.now() > expiryDate.getTime();
+}
+
+/**
+ * Ordered fallback chain of {label, apiKey, baseUrl, model} attempts —
+ * callLLM() below tries each in order and only moves to the next on failure.
+ * A tier is included only when its env vars are set, so an unconfigured tier
+ * is simply absent rather than attempted-and-skipped.
+ *
+ * The legacy single-provider vars (LLM_API_KEY/LLM_BASE_URL/LLM_MODEL,
+ * or OPENAI_API_KEY/OPENAI_BASE_URL) are kept as an always-first "primary"
+ * tier for anyone who hasn't adopted the multi-tier vars below — for them
+ * this chain has exactly one entry, identical to the old single-provider
+ * behavior.
+ */
+function getProviderChain() {
+    const chain = [];
+
+    const legacyKey = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
+    if (legacyKey) {
+        chain.push({
+            label: 'primary',
+            apiKey: legacyKey,
+            baseUrl: process.env.LLM_BASE_URL || process.env.OPENAI_BASE_URL,
+            model:
+                process.env.LLM_MODEL ||
+                process.env.TUDUDI_AI_MODEL ||
+                'gpt-4o-mini',
+        });
+    }
+
+    if (process.env.LLM_OPENROUTER_API_KEY) {
+        const models = (process.env.LLM_OPENROUTER_MODELS || '')
+            .split(',')
+            .map((m) => m.trim())
+            .filter(Boolean);
+        for (const model of models) {
+            chain.push({
+                label: 'openrouter',
+                apiKey: process.env.LLM_OPENROUTER_API_KEY,
+                baseUrl:
+                    process.env.LLM_OPENROUTER_BASE_URL ||
+                    'https://openrouter.ai/api/v1',
+                model,
+            });
+        }
+    }
+
+    if (process.env.LLM_GEMINI_API_KEY) {
+        chain.push({
+            label: 'gemini',
+            apiKey: process.env.LLM_GEMINI_API_KEY,
+            baseUrl:
+                process.env.LLM_GEMINI_BASE_URL ||
+                'https://generativelanguage.googleapis.com/v1beta/openai/',
+            model: process.env.LLM_GEMINI_MODEL || 'gemini-3.6-flash',
+        });
+    }
+
+    if (process.env.LLM_GROQ_API_KEY) {
+        const expiresAt = parseExpiry(process.env.LLM_GROQ_EXPIRES_AT);
+        if (isExpired(expiresAt)) {
+            console.warn(
+                `[AI Assistant] Groq API key expired on ${process.env.LLM_GROQ_EXPIRES_AT} — skipping this fallback tier. Generate a new key at https://console.groq.com/keys and update LLM_GROQ_API_KEY / LLM_GROQ_EXPIRES_AT.`
+            );
+        } else {
+            chain.push({
+                label: 'groq',
+                apiKey: process.env.LLM_GROQ_API_KEY,
+                baseUrl:
+                    process.env.LLM_GROQ_BASE_URL ||
+                    'https://api.groq.com/openai/v1',
+                model: process.env.LLM_GROQ_MODEL || 'openai/gpt-oss-120b',
+                expiresAt,
+            });
+        }
+    }
+
+    if (process.env.LLM_OLLAMA_BASE_URL) {
+        chain.push({
+            label: 'ollama',
+            apiKey: process.env.LLM_OLLAMA_API_KEY || 'ollama-local',
+            baseUrl: process.env.LLM_OLLAMA_BASE_URL,
+            model: process.env.LLM_OLLAMA_MODEL || 'qwen2.5:3b-instruct',
+        });
+    }
+
+    return chain;
+}
+
+/** Provider info safe to expose over the API — no api keys. */
+function getProviderChainSummary() {
+    return getProviderChain().map(({ label, baseUrl, model, expiresAt }) => ({
+        label,
+        base_url: baseUrl || null,
+        model,
+        expires_at: expiresAt ? expiresAt.toISOString() : null,
+    }));
+}
+
 function isAIConfigured() {
-    return !!(process.env.LLM_API_KEY || process.env.OPENAI_API_KEY);
+    return getProviderChain().length > 0;
 }
 
-function getOpenAIClient() {
-    const apiKey = process.env.LLM_API_KEY || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-        throw new AppError(
-            'AI assistant is not configured. Set LLM_API_KEY (or OPENAI_API_KEY) on the server to enable it.',
-            503,
-            'AI_NOT_CONFIGURED'
-        );
-    }
+const clientCache = new Map();
+function buildClient(apiKey, baseUrl) {
+    const cacheKey = `${baseUrl || ''}|${apiKey}`;
+    if (clientCache.has(cacheKey)) return clientCache.get(cacheKey);
     const options = { apiKey };
-    const baseURL = process.env.LLM_BASE_URL || process.env.OPENAI_BASE_URL;
-    if (baseURL) {
-        options.baseURL = baseURL;
-    }
-    return new OpenAI(options);
-}
-
-function getAIModel() {
-    return (
-        process.env.LLM_MODEL || process.env.TUDUDI_AI_MODEL || 'gpt-4o-mini'
-    );
+    if (baseUrl) options.baseURL = baseUrl;
+    const client = new OpenAI(options);
+    clientCache.set(cacheKey, client);
+    return client;
 }
 
 function getMaxTokens(envVar, defaultValue) {
@@ -118,6 +228,146 @@ async function callWithFallback(client, params) {
     }
 }
 
+/**
+ * Try each tier of getProviderChain() in order, using the same request
+ * params but a different {client, model} per attempt. Returns the first
+ * successful response — response.model reflects whichever tier actually
+ * answered. Throws AI_ALL_PROVIDERS_FAILED only when every configured tier
+ * has failed (network error, expired/invalid key, rate limit, etc.).
+ */
+async function callLLM(paramsWithoutModel) {
+    const chain = getProviderChain();
+    if (chain.length === 0) {
+        throw new AppError(
+            'AI assistant is not configured. Set LLM_API_KEY (or one of the LLM_OPENROUTER_*/LLM_GEMINI_*/LLM_GROQ_*/LLM_OLLAMA_* fallback tiers) on the server to enable it.',
+            503,
+            'AI_NOT_CONFIGURED'
+        );
+    }
+
+    const failures = [];
+    for (const tier of chain) {
+        try {
+            const client = buildClient(tier.apiKey, tier.baseUrl);
+            const response = await callWithFallback(client, {
+                ...paramsWithoutModel,
+                model: tier.model,
+            });
+            if (failures.length > 0) {
+                console.warn(
+                    `[AI Assistant] Fell back to tier "${tier.label}" (${tier.model}) after ${failures.length} earlier failure(s): ${failures.map((f) => `${f.tier}/${f.model}`).join(', ')}`
+                );
+            }
+            return response;
+        } catch (err) {
+            const message = err?.message || String(err);
+            console.warn(
+                `[AI Assistant] Tier "${tier.label}" (${tier.model}) failed: ${message}`
+            );
+            failures.push({ tier: tier.label, model: tier.model, message });
+        }
+    }
+
+    throw new AppError(
+        `AI assistant: all ${chain.length} configured provider(s) failed. ${failures.map((f) => `${f.tier}/${f.model}: ${f.message}`).join('; ')}`,
+        503,
+        'AI_ALL_PROVIDERS_FAILED'
+    );
+}
+
+/**
+ * Batch-resolve the Strategy & Key Result context for a set of active goals,
+ * capped to MAX_CONTEXT_STRATEGIES total (a context-budget guard, not an
+ * exhaustive listing) — ranked at-risk/off-track first, then by importance.
+ * Returns null when GoalsHQ is disabled or there's nothing to show.
+ */
+async function fetchGoalshqContext(userId, goals) {
+    if (!isGoalshqEnabled() || goals.length === 0) return null;
+
+    const goalIds = goals.map((g) => g.id);
+    const [goalSettingsByGoalId, strategiesByGoalId] = await Promise.all([
+        goalshqRepo.settingsByGoalIds(goalIds),
+        goalshqRepo.strategiesByGoalIds(userId, goalIds),
+    ]);
+
+    const allStrategies = [...strategiesByGoalId.values()].flat();
+    const topStrategies = allStrategies
+        .slice()
+        .sort((a, b) => {
+            const aRisk = AT_RISK_HEALTH.includes(a.cached_health) ? 0 : 1;
+            const bRisk = AT_RISK_HEALTH.includes(b.cached_health) ? 0 : 1;
+            if (aRisk !== bRisk) return aRisk - bRisk;
+            if (b.importance !== a.importance)
+                return b.importance - a.importance;
+            return a.id - b.id;
+        })
+        .slice(0, MAX_CONTEXT_STRATEGIES);
+
+    const strategyDetails = await Promise.all(
+        topStrategies.map(async (strategy) => {
+            const [keyResults, milestones] = await Promise.all([
+                goalshqRepo.keyResults('strategy', strategy.id),
+                goalshqRepo.milestones('strategy', strategy.id),
+            ]);
+            return { strategy, keyResults, milestones };
+        })
+    );
+
+    const hasAnything =
+        strategyDetails.length > 0 || goalSettingsByGoalId.size > 0;
+    if (!hasAnything) return null;
+
+    return { goalSettingsByGoalId, strategiesByGoalId, strategyDetails };
+}
+
+/**
+ * Tasks that have been auto-classified as "reschedule" 2+ times historically
+ * (see backend/modules/tasks/carryover/service.js) — a pattern the daily
+ * brief can call out directly instead of the user seeing the same task carry
+ * over silently, day after day. Two batched queries, never a per-task one.
+ */
+async function fetchRepeatCarryoverTasks(
+    userId,
+    limit = MAX_REPEAT_CARRYOVER_TASKS
+) {
+    const counts = await TaskCarryoverEvent.findAll({
+        where: { user_id: userId, classification: 'reschedule' },
+        attributes: ['task_id', [fn('COUNT', col('id')), 'carryover_count']],
+        group: ['task_id'],
+        having: literal('COUNT(id) >= 2'),
+        raw: true,
+    });
+    if (counts.length === 0) return [];
+
+    const taskIds = counts.map((c) => c.task_id);
+    const tasks = await Task.findAll({
+        where: {
+            id: { [Op.in]: taskIds },
+            user_id: userId,
+            status: {
+                [Op.notIn]: [
+                    Task.STATUS.DONE,
+                    Task.STATUS.ARCHIVED,
+                    Task.STATUS.CANCELLED,
+                ],
+            },
+        },
+        attributes: ['id', 'uid', 'name'],
+    });
+
+    const countByTaskId = new Map(
+        counts.map((c) => [c.task_id, Number(c.carryover_count)])
+    );
+    return tasks
+        .map((t) => ({
+            name: t.name,
+            uid: t.uid,
+            count: countByTaskId.get(t.id) || 0,
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, limit);
+}
+
 async function fetchUserContext(userId) {
     const user = await User.findByPk(userId, {
         attributes: ['id', 'timezone', 'email', 'ai_profile'],
@@ -151,10 +401,31 @@ async function fetchUserContext(userId) {
         computeTaskMetrics(userId, timezone),
     ]);
 
-    return { user, timezone, goals, projects, metrics };
+    const [goalshqContext, repeatCarryoverTasks] = await Promise.all([
+        fetchGoalshqContext(userId, goals),
+        fetchRepeatCarryoverTasks(userId),
+    ]);
+
+    return {
+        user,
+        timezone,
+        goals,
+        projects,
+        metrics,
+        goalshqContext,
+        repeatCarryoverTasks,
+    };
 }
 
-function buildContextSummary({ user, timezone, goals, projects, metrics }) {
+function buildContextSummary({
+    user,
+    timezone,
+    goals,
+    projects,
+    metrics,
+    goalshqContext,
+    repeatCarryoverTasks,
+}) {
     const now = moment().tz(timezone);
     const dateStr = now.format('dddd, MMMM D, YYYY');
     const timeStr = now.format('h:mm A z');
@@ -171,6 +442,7 @@ function buildContextSummary({ user, timezone, goals, projects, metrics }) {
     lines.push('');
 
     // Goals
+    const goalSettingsByGoalId = goalshqContext?.goalSettingsByGoalId;
     lines.push(`## Active Goals (${goals.length})`);
     if (goals.length === 0) {
         lines.push('No active goals set.');
@@ -179,11 +451,48 @@ function buildContextSummary({ user, timezone, goals, projects, metrics }) {
             const area = g.Area ? ` [${g.Area.name}]` : '';
             const horizon = g.horizon ? ` (${g.horizon})` : '';
             const target = g.target_date ? ` — target: ${g.target_date}` : '';
-            lines.push(`- "${g.title}"${area}${horizon}${target}`);
+            const settings = goalSettingsByGoalId?.get(g.id);
+            const health =
+                settings?.cached_health && settings.cached_health !== 'no_data'
+                    ? ` [${settings.cached_health}]`
+                    : '';
+            lines.push(`- "${g.title}"${area}${horizon}${target}${health}`);
             if (g.why) lines.push(`  Why: ${g.why}`);
         });
     }
     lines.push('');
+
+    // Strategy & Key Results (GoalsHQ) — capped, context-budget guarded
+    if (goalshqContext && goalshqContext.strategyDetails.length > 0) {
+        const goalTitleById = new Map(goals.map((g) => [g.id, g.title]));
+        const { strategyDetails } = goalshqContext;
+        lines.push(`## Strategy & Key Results (top ${strategyDetails.length})`);
+        strategyDetails.forEach(({ strategy, keyResults, milestones }) => {
+            const goalTitle = goalTitleById.get(strategy.goal_id);
+            const goalRef = goalTitle ? ` → Goal: "${goalTitle}"` : '';
+            const health =
+                strategy.cached_health && strategy.cached_health !== 'no_data'
+                    ? ` [${strategy.cached_health}]`
+                    : '';
+            const percent =
+                strategy.cached_percent != null
+                    ? ` (${Math.round(strategy.cached_percent)}%)`
+                    : '';
+            lines.push(`- "${strategy.name}"${percent}${health}${goalRef}`);
+            keyResults.slice(0, 2).forEach((kr) => {
+                const pct = keyResultPercent(kr);
+                const pctStr = pct != null ? ` (${Math.round(pct)}%)` : '';
+                lines.push(
+                    `  KR: ${kr.name} — ${kr.current_value}/${kr.target_value}${kr.unit ? ` ${kr.unit}` : ''}${pctStr}`
+                );
+            });
+            milestones.slice(0, 2).forEach((m) => {
+                const due = m.target_date ? ` (target: ${m.target_date})` : '';
+                lines.push(`  Milestone: ${m.title} [${m.status}]${due}`);
+            });
+        });
+        lines.push('');
+    }
 
     // Projects
     lines.push(`## Active Projects (${projects.length})`);
@@ -248,6 +557,15 @@ function buildContextSummary({ user, timezone, goals, projects, metrics }) {
         lines.push('');
     }
 
+    // Tasks that keep getting rescheduled (Phase D carryover history)
+    if (repeatCarryoverTasks && repeatCarryoverTasks.length > 0) {
+        lines.push(`## Keeps Getting Postponed`);
+        repeatCarryoverTasks.forEach((t) => {
+            lines.push(`- "${t.name}" — carried over ${t.count}x`);
+        });
+        lines.push('');
+    }
+
     // In-progress tasks (up to 5)
     const inProgressTasks = metrics.tasks_in_progress || [];
     if (inProgressTasks.length > 0) {
@@ -306,7 +624,7 @@ async function getCachedBrief(userId) {
     return user.ai_daily_brief;
 }
 
-function buildEntityMaps({ metrics, projects }) {
+function buildEntityMaps({ metrics, projects, repeatCarryoverTasks }) {
     const taskMap = new Map();
     const projectMap = new Map();
 
@@ -316,6 +634,7 @@ function buildEntityMaps({ metrics, projects }) {
         ...(metrics.today_plan_tasks || []),
         ...(metrics.suggested_tasks || []),
         ...(metrics.tasks_due_today || []),
+        ...(repeatCarryoverTasks || []),
     ];
 
     allTasks.forEach((t) => {
@@ -334,8 +653,6 @@ function buildEntityMaps({ metrics, projects }) {
 }
 
 async function generateDailyBrief(userId) {
-    const client = getOpenAIClient();
-
     const context = await fetchUserContext(userId);
     const contextSummary = buildContextSummary(context);
 
@@ -364,8 +681,7 @@ Rules:
 - Plain text only — no markdown, no ** formatting
 - Return only the JSON object, no other text`;
 
-    const response = await callWithFallback(client, {
-        model: getAIModel(),
+    const response = await callLLM({
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: contextSummary },
@@ -501,8 +817,6 @@ async function updateTaskInsightsDismissed(taskUid, userId, dismissed) {
 }
 
 async function generateTaskInsights(taskContext, userId) {
-    const client = getOpenAIClient();
-
     const {
         taskUid,
         taskName,
@@ -601,8 +915,7 @@ Rules:
 - Always reference the actual task name, project name, or tags in your response
 - Return only the JSON object, no other text`;
 
-    const response = await callWithFallback(client, {
-        model: getAIModel(),
+    const response = await callLLM({
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: lines.join('\n') },
@@ -707,8 +1020,6 @@ async function updateProjectInsightsDismissed(projectUid, userId, dismissed) {
 }
 
 async function generateProjectInsights(projectContext, userId) {
-    const client = getOpenAIClient();
-
     const {
         projectUid,
         projectName,
@@ -760,8 +1071,7 @@ Rules:
 - watch_out should be null (JSON null) if there's no meaningful risk to flag
 - Return only the JSON object, no other text`;
 
-    const response = await callWithFallback(client, {
-        model: getAIModel(),
+    const response = await callLLM({
         messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: lines.join('\n') },
@@ -811,6 +1121,7 @@ Rules:
 
 module.exports = {
     isAIConfigured,
+    getProviderChainSummary,
     generateDailyBrief,
     getCachedBrief,
     generateTaskInsights,

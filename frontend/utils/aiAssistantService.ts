@@ -1,10 +1,18 @@
 import { getApiPath } from '../config/paths';
 import { getPostHeadersWithCsrf, handleAuthResponse } from './authUtils';
 
+export interface AIProviderTier {
+    label: string;
+    base_url: string | null;
+    model: string;
+    expires_at: string | null;
+}
+
 export interface AIConfig {
     api_key_set: boolean;
     base_url: string | null;
-    model: string;
+    model: string | null;
+    providers: AIProviderTier[];
 }
 
 export const fetchAIConfig = async (): Promise<AIConfig | null> => {

@@ -8,15 +8,15 @@ const controller = {
         const userId = getAuthenticatedUserId(req);
         if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-        const apiKeySet = aiAssistantService.isAIConfigured();
-        const baseUrl =
-            process.env.LLM_BASE_URL || process.env.OPENAI_BASE_URL || null;
-        const model =
-            process.env.LLM_MODEL ||
-            process.env.TUDUDI_AI_MODEL ||
-            'gpt-4o-mini';
+        const providers = aiAssistantService.getProviderChainSummary();
+        const first = providers[0] || null;
 
-        res.json({ api_key_set: apiKeySet, base_url: baseUrl, model });
+        res.json({
+            api_key_set: providers.length > 0,
+            base_url: first ? first.base_url : null,
+            model: first ? first.model : null,
+            providers,
+        });
     },
 
     async getCachedBrief(req, res, next) {
