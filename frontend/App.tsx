@@ -21,6 +21,7 @@ import GoalDetails from './components/Goal/GoalDetails';
 import Goals from './components/Goals';
 import StrategyOverview from './components/Strategy/StrategyOverview';
 import StrategyDetail from './components/Strategy/StrategyDetail';
+import ArchivePage from './components/Archive/ArchivePage';
 import Views from './components/Views';
 import ViewDetail from './components/ViewDetail';
 import Notes from './components/Notes';
@@ -319,6 +320,10 @@ const App: React.FC = () => {
                             <Route
                                 path="/strategy/:uidSlug"
                                 element={<StrategyDetail />}
+                            />
+                            <Route
+                                path="/archive"
+                                element={<ArchivePage />}
                             />
                             <Route path="/views" element={<Views />} />
                             <Route
