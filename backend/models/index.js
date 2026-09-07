@@ -103,6 +103,7 @@ const CalendarToken = require('./calendar_token')(sequelize);
 const Goal = require('./goal')(sequelize);
 const Person = require('./person')(sequelize);
 const UserProjectArea = require('./user_project_area')(sequelize);
+const TaskCarryoverEvent = require('./task_carryover_event')(sequelize);
 const GoalshqStrategy = require('../modules/goalshq/models/strategy')(
     sequelize
 );
@@ -161,6 +162,18 @@ User.hasMany(TaskEvent, { foreignKey: 'user_id', as: 'TaskEvents' });
 TaskEvent.belongsTo(User, { foreignKey: 'user_id', as: 'User' });
 Task.hasMany(TaskEvent, { foreignKey: 'task_id', as: 'TaskEvents' });
 TaskEvent.belongsTo(Task, { foreignKey: 'task_id', as: 'Task' });
+
+// Carryover/rescheduling (Phase D)
+User.hasMany(TaskCarryoverEvent, {
+    foreignKey: 'user_id',
+    as: 'CarryoverEvents',
+});
+TaskCarryoverEvent.belongsTo(User, { foreignKey: 'user_id', as: 'User' });
+Task.hasMany(TaskCarryoverEvent, {
+    foreignKey: 'task_id',
+    as: 'CarryoverEvents',
+});
+TaskCarryoverEvent.belongsTo(Task, { foreignKey: 'task_id', as: 'Task' });
 
 Task.belongsTo(Task, {
     as: 'ParentTask',
@@ -587,4 +600,5 @@ module.exports = {
     GoalshqMilestone,
     GoalshqProgressSnapshot,
     GoalshqProjectSettings,
+    TaskCarryoverEvent,
 };

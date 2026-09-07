@@ -13,6 +13,7 @@ import {
     buildGoalInfoMap,
 } from '../../utils/suggestionScoringUtils';
 import TodayStrategyBanner from './TodayStrategyBanner';
+import CarryoverReview from './CarryoverReview';
 import { getTodayDateString } from '../../utils/dateUtils';
 import {
     ClipboardDocumentListIcon,
@@ -1432,6 +1433,8 @@ const TasksToday: React.FC = () => {
                     goalSummaries={goalSummaries}
                     enabled={goalshqEnabled}
                 />
+
+                <CarryoverReview />
 
                 {/* AI Daily Brief - kept mounted once opened to preserve fetched content */}
                 {hasBriefMounted && aiAssistantEnabled && (

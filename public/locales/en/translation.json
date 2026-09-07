@@ -197,6 +197,16 @@
     "showCompleted": "Show Completed Tasks",
     "hideCompleted": "Hide Completed Tasks"
   },
+  "carryover": {
+    "title": "Carried over from before",
+    "resurface": "Resurface",
+    "reschedule": "Reschedule",
+    "drop": "Drop",
+    "proposedDate": "Proposed new due date",
+    "dropExplanation": "No project/goal, overdue a while, low priority — safe to cancel?",
+    "resurfaceExplanation": "This matters — surfacing it, not touching its due date.",
+    "changeInstead": "Change instead"
+  },
   "tasks": {
     "title": "Tasks",
     "today": "Today",
