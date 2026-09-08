@@ -522,6 +522,15 @@ export const setMilestoneTasks = async (
     return (await response.json()).milestones;
 };
 
+export const fetchGoalshqProject = async (uid: string): Promise<any> => {
+    const response = await fetch(getApiPath(`goalshq/projects/${uid}`), {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+    });
+    await handleAuthResponse(response, 'Failed to load project metrics.');
+    return (await response.json()).project;
+};
+
 export const fetchGoalshqReport = async (
     parentType: P2Parent,
     parentUid: string,

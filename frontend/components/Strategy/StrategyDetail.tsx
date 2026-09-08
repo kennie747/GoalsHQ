@@ -313,6 +313,13 @@ const StrategyDetail: React.FC = () => {
                             keyResults={strategy.key_results || []}
                             milestones={strategy.milestones || []}
                             readOnly={!strategy.metrics_editable}
+                            propagateTargets={(strategy.projects || []).map(
+                                (p) => ({
+                                    parent_type: 'project' as const,
+                                    parent_uid: p.uid,
+                                    label: `${p.name} (project)`,
+                                })
+                            )}
                             onChange={load}
                         />
                     </section>

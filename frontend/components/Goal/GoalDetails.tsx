@@ -819,6 +819,22 @@ const GoalDetails: React.FC = () => {
                                             parentUid={goal.uid!}
                                             keyResults={goalHq.key_results}
                                             milestones={goalHq.milestones}
+                                            propagateTargets={[
+                                                ...goalHq.strategies.map(
+                                                    (s) => ({
+                                                        parent_type:
+                                                            'strategy' as const,
+                                                        parent_uid: s.uid,
+                                                        label: `${s.name} (strategy)`,
+                                                    })
+                                                ),
+                                                ...goalHq.projects.map((p) => ({
+                                                    parent_type:
+                                                        'project' as const,
+                                                    parent_uid: p.uid,
+                                                    label: `${p.name} (project)`,
+                                                })),
+                                            ]}
                                             onChange={() =>
                                                 loadGoalHq(goal.uid!)
                                             }

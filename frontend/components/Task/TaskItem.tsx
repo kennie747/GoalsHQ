@@ -19,6 +19,8 @@ import { isTaskOverdueInTodayPlan } from '../../utils/dateUtils';
 import { useTranslation } from 'react-i18next';
 import ConfirmDialog from '../Shared/ConfirmDialog';
 import { getApiPath } from '../../config/paths';
+import { useStore } from '../../store/useStore';
+import LogResultModal from './LogResultModal';
 
 const getPriorityBorderClassName = (priority?: Task['priority'] | number): string => {
     let normalizedPriority = priority;
@@ -74,6 +76,10 @@ const TaskItem: React.FC<TaskItemProps> = ({
     const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
     const { showErrorToast, showUndoToast } = useToast();
     const [isAnimatingOut, setIsAnimatingOut] = useState(false);
+    const goalshqEnabled = useStore(
+        (state: any) => state.userSettingsStore?.goalshqEnabled
+    );
+    const [logResult, setLogResult] = useState(false);
 
     // Status menu state
     const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
@@ -206,6 +212,16 @@ const TaskItem: React.FC<TaskItemProps> = ({
                 }
 
                 const response = await toggleTaskCompletion(task.uid!, task);
+
+                // Optional GoalsHQ "Log a result?" — only for a task with a
+                // project, only when completing.
+                if (
+                    isCompletingTask &&
+                    goalshqEnabled &&
+                    (task.project_uid || task.Project?.uid)
+                ) {
+                    setLogResult(true);
+                }
 
                 // Show undo toast on completion
                 if (isCompletingTask) {
@@ -421,6 +437,17 @@ const TaskItem: React.FC<TaskItemProps> = ({
                     )}
                     onConfirm={handleConfirmDelete}
                     onCancel={() => setIsConfirmDialogOpen(false)}
+                />
+            )}
+            {logResult && (
+                <LogResultModal
+                    taskUid={task.uid!}
+                    taskName={task.name}
+                    projectUid={
+                        (task.project_uid || task.Project?.uid) as string
+                    }
+                    goalUid={task.goal_uid}
+                    onClose={() => setLogResult(false)}
                 />
             )}
         </div>

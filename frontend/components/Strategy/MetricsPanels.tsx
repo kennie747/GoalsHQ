@@ -17,7 +17,15 @@ import {
     deleteMilestone,
     expandMilestone,
     createKrEntry,
+    propagateKeyResult,
+    fetchKeyResultDetail,
 } from '../../utils/goalsHqService';
+
+export interface PropagateTarget {
+    parent_type: 'goal' | 'strategy' | 'project';
+    parent_uid: string;
+    label: string;
+}
 
 interface Props {
     parentType: ParentType;
@@ -27,6 +35,8 @@ interface Props {
     onChange: () => void;
     /** values-only rendering (strategy with metrics_editable = false) */
     readOnly?: boolean;
+    /** linked strategies/projects a KR can be propagated down to */
+    propagateTargets?: PropagateTarget[];
 }
 
 const inputCls =
@@ -39,6 +49,7 @@ const MetricsPanels: React.FC<Props> = ({
     milestones,
     onChange,
     readOnly = false,
+    propagateTargets = [],
 }) => {
     const { t } = useTranslation();
     const [krDraft, setKrDraft] = useState({
@@ -55,6 +66,36 @@ const MetricsPanels: React.FC<Props> = ({
     const [expandedUids, setExpandedUids] = useState<Set<string>>(new Set());
     const [checkInUid, setCheckInUid] = useState<string | null>(null);
     const [checkInValue, setCheckInValue] = useState('');
+    const [propagateUid, setPropagateUid] = useState<string | null>(null);
+    const [propagatePick, setPropagatePick] = useState<Set<string>>(new Set());
+    const [coverage, setCoverage] = useState<
+        Record<string, { child_target_sum: number; target: number; gap: number }>
+    >({});
+
+    const doPropagate = async (kr: KeyResult) => {
+        const nodes = propagateTargets
+            .filter((tg) => propagatePick.has(tg.parent_uid))
+            .map((tg) => ({
+                parent_type: tg.parent_type,
+                parent_uid: tg.parent_uid,
+            }));
+        if (nodes.length === 0) return;
+        await propagateKeyResult(kr.uid, nodes);
+        setPropagateUid(null);
+        setPropagatePick(new Set());
+        onChange();
+    };
+
+    const loadCoverage = async (kr: KeyResult) => {
+        if (coverage[kr.uid] || !kr.is_rollup) return;
+        try {
+            const detail = await fetchKeyResultDetail(kr.uid);
+            if (detail.coverage)
+                setCoverage((c) => ({ ...c, [kr.uid]: detail.coverage! }));
+        } catch {
+            /* ignore */
+        }
+    };
 
     const submitCheckIn = async (kr: KeyResult) => {
         if (checkInValue === '') return;
@@ -204,6 +245,27 @@ const MetricsPanels: React.FC<Props> = ({
                                     {t('goalshq.checkIn', '+ check-in')}
                                 </button>
                             )}
+                            {!readOnly &&
+                                propagateTargets.length > 0 &&
+                                !kr.parent_kr_uid && (
+                                    <button
+                                        onClick={() => {
+                                            setPropagateUid(
+                                                propagateUid === kr.uid
+                                                    ? null
+                                                    : kr.uid
+                                            );
+                                            loadCoverage(kr);
+                                        }}
+                                        className="text-xs text-gray-500 hover:underline"
+                                        title={t(
+                                            'goalshq.propagateHint',
+                                            'Create child KRs on linked strategies/projects'
+                                        )}
+                                    >
+                                        {t('goalshq.propagate', 'propagate')}
+                                    </button>
+                                )}
                             {!readOnly && (
                                 <button
                                     aria-label={t('common.delete', 'Delete')}
@@ -218,6 +280,74 @@ const MetricsPanels: React.FC<Props> = ({
                             )}
                         </li>
                     ))}
+                    {propagateUid &&
+                        (() => {
+                            const kr = keyResults.find(
+                                (k) => k.uid === propagateUid
+                            );
+                            if (!kr) return null;
+                            const cov = coverage[kr.uid];
+                            return (
+                                <li className="rounded border border-gray-300 bg-gray-50 p-2 text-sm dark:border-gray-600 dark:bg-gray-800">
+                                    <div className="mb-1 text-xs font-medium">
+                                        {t(
+                                            'goalshq.propagateTitle',
+                                            'Propagate "{{n}}" downward',
+                                            { n: kr.name }
+                                        )}
+                                    </div>
+                                    {cov && (
+                                        <div className="mb-1 text-xs text-amber-600 dark:text-amber-400">
+                                            {t(
+                                                'goalshq.coverage',
+                                                'children cover {{c}} of {{tt}} — {{g}} unallocated',
+                                                {
+                                                    c: cov.child_target_sum,
+                                                    tt: cov.target,
+                                                    g: cov.gap,
+                                                }
+                                            )}
+                                        </div>
+                                    )}
+                                    <div className="space-y-1">
+                                        {propagateTargets.map((tg) => (
+                                            <label
+                                                key={tg.parent_uid}
+                                                className="flex items-center gap-2 text-xs"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={propagatePick.has(
+                                                        tg.parent_uid
+                                                    )}
+                                                    onChange={(e) => {
+                                                        const n = new Set(
+                                                            propagatePick
+                                                        );
+                                                        if (e.target.checked)
+                                                            n.add(
+                                                                tg.parent_uid
+                                                            );
+                                                        else
+                                                            n.delete(
+                                                                tg.parent_uid
+                                                            );
+                                                        setPropagatePick(n);
+                                                    }}
+                                                />
+                                                {tg.label}
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => doPropagate(kr)}
+                                        className="mt-2 rounded bg-blue-600 px-2 py-1 text-xs text-white"
+                                    >
+                                        {t('goalshq.createKrs', 'Create KRs')}
+                                    </button>
+                                </li>
+                            );
+                        })()}
                     {checkInUid &&
                         (() => {
                             const kr = keyResults.find(
