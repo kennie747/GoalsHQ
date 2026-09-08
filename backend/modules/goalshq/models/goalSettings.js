@@ -3,11 +3,17 @@
 const { DataTypes } = require('sequelize');
 
 /**
- * goalshq_goal_settings — 1:1 extension of a tududi Goal holding the strategic
- * / measurement attributes core `goals` lacks. Row is created lazily the first
- * time GoalsHQ touches a goal. Associated to Goal in backend/models/index.js.
+ * goalshq_goal_settings — 1:1 extension of a tududi Goal. Row is created lazily
+ * the first time GoalsHQ touches a goal. Associated to Goal in
+ * backend/models/index.js.
+ *
+ * A goal always has an *execution* number (task/project completion). It gets an
+ * *outcome* number (Key Results / Milestones) only when `metrics_enabled` is on.
+ * The two are cached separately and shown side by side — never blended.
  */
 module.exports = (sequelize) => {
+    const HEALTH = ['on_track', 'at_risk', 'off_track', 'no_data'];
+
     const GoalSettings = sequelize.define(
         'GoalshqGoalSettings',
         {
@@ -25,24 +31,7 @@ module.exports = (sequelize) => {
                 type: DataTypes.INTEGER,
                 allowNull: false,
             },
-            progress_mode: {
-                type: DataTypes.ENUM(
-                    'rollup_strategies',
-                    'rollup_projects',
-                    'rollup_tasks',
-                    'metric',
-                    'milestones',
-                    'manual'
-                ),
-                allowNull: false,
-                defaultValue: 'rollup_strategies',
-            },
-            importance: {
-                type: DataTypes.INTEGER,
-                allowNull: false,
-                defaultValue: 3,
-            },
-            weight_by_priority: {
+            metrics_enabled: {
                 type: DataTypes.BOOLEAN,
                 allowNull: false,
                 defaultValue: false,
@@ -51,21 +40,25 @@ module.exports = (sequelize) => {
                 type: DataTypes.DATEONLY,
                 allowNull: true,
             },
+            // Optional manual override of the execution %.
             manual_percent: {
                 type: DataTypes.FLOAT,
                 allowNull: true,
             },
-            cached_percent: {
+            cached_execution_percent: {
                 type: DataTypes.FLOAT,
                 allowNull: true,
             },
-            cached_health: {
-                type: DataTypes.ENUM(
-                    'on_track',
-                    'at_risk',
-                    'off_track',
-                    'no_data'
-                ),
+            cached_execution_health: {
+                type: DataTypes.ENUM(...HEALTH),
+                allowNull: true,
+            },
+            cached_outcome_percent: {
+                type: DataTypes.FLOAT,
+                allowNull: true,
+            },
+            cached_outcome_health: {
+                type: DataTypes.ENUM(...HEALTH),
                 allowNull: true,
             },
             cached_computed_at: {

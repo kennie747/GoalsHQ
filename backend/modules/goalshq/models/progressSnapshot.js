@@ -20,8 +20,14 @@ module.exports = (sequelize) => {
                 autoIncrement: true,
             },
             parent_type: {
-                type: DataTypes.ENUM('goal', 'strategy', 'project'),
+                // goal | strategy | project (app-validated)
+                type: DataTypes.STRING(20),
                 allowNull: false,
+            },
+            kind: {
+                type: DataTypes.ENUM('execution', 'outcome'),
+                allowNull: false,
+                defaultValue: 'execution',
             },
             parent_id: {
                 type: DataTypes.INTEGER,
@@ -55,7 +61,12 @@ module.exports = (sequelize) => {
             indexes: [
                 {
                     unique: true,
-                    fields: ['parent_type', 'parent_id', 'snapshot_date'],
+                    fields: [
+                        'parent_type',
+                        'parent_id',
+                        'kind',
+                        'snapshot_date',
+                    ],
                 },
                 { fields: ['user_id'] },
             ],

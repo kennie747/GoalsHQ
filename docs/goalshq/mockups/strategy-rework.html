@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoalsHQ — Strategy rework + Records/Reporting mockup</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#ffffff; --panel-2:#fafbfc; --ink:#1f2430; --ink-soft:#5b6472;
+    --line:#e4e7ec; --line-2:#eef0f3; --accent:#2563eb; --accent-soft:#e8effd;
+    --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --muted:#8a93a2;
+    --bar-track:#e9ecf1;
+    --shadow:0 10px 30px rgba(20,28,45,.14);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f131a; --panel:#161b23; --panel-2:#1b212b; --ink:#e6e9ef; --ink-soft:#a7b0be;
+    --line:#2a313c; --line-2:#222932; --accent:#5b9bff; --accent-soft:#1d2b44;
+    --ok:#4ade80; --warn:#f5b74e; --bad:#f87171; --muted:#6b7482;
+    --bar-track:#2a313c; --shadow:0 10px 30px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  .app{display:grid;grid-template-columns:230px 1fr;min-height:100vh}
+  /* ---- left nav ---- */
+  .nav{background:var(--panel);border-right:1px solid var(--line);padding:14px 10px;position:sticky;top:0;height:100vh;overflow:auto}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;padding:6px 8px 12px}
+  .brand svg{width:20px;height:20px}
+  .nav h4{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:14px 8px 4px}
+  .nav button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--ink-soft);
+    padding:7px 8px;border-radius:7px;cursor:pointer;font-size:13px}
+  .nav button:hover{background:var(--panel-2)}
+  .nav button.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .themebtn{margin:6px 8px 0;border:1px solid var(--line);color:var(--ink-soft);border-radius:7px;padding:7px 8px;background:none;cursor:pointer;width:calc(100% - 16px)}
+  /* ---- main ---- */
+  .main{padding:26px 30px 80px;max-width:1040px}
+  .screen{display:none}
+  .screen.show{display:block;animation:fade .18s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .screen > h2{margin:0 0 4px;font-size:20px}
+  .screen > .lede{color:var(--ink-soft);margin:0 0 20px;max-width:70ch}
+  .note{background:var(--panel-2);border:1px dashed var(--line);border-radius:8px;padding:10px 12px;color:var(--ink-soft);font-size:12.5px;margin:14px 0}
+  .note b{color:var(--ink)}
+  /* ---- generic ui bits ---- */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:0;overflow:hidden;margin:16px 0;box-shadow:0 1px 2px rgba(20,28,45,.04)}
+  .card .hd{padding:14px 16px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .card .bd{padding:14px 16px}
+  .card .bd + .bd{border-top:1px solid var(--line-2)}
+  .row{display:flex;align-items:center;gap:10px}
+  .spread{justify-content:space-between}
+  .dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+  .pill{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--ink-soft);white-space:nowrap}
+  .pill.ok{color:var(--ok);border-color:var(--ok)}
+  .pill.warn{color:var(--warn);border-color:var(--warn)}
+  .pill.bad{color:var(--bad);border-color:var(--bad)}
+  .muted{color:var(--muted)}
+  .soft{color:var(--ink-soft)}
+  .kbtn{font-size:12.5px;padding:6px 11px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+  .kbtn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .kbtn.ghost{border-color:transparent;color:var(--ink-soft)}
+  .tag{font-size:11px;background:var(--accent-soft);color:var(--accent);padding:2px 7px;border-radius:6px}
+  /* progress */
+  .bar{height:8px;border-radius:999px;background:var(--bar-track);overflow:hidden;flex:1;min-width:80px}
+  .bar > i{display:block;height:100%;border-radius:999px;background:var(--accent)}
+  .bar.ok > i{background:var(--ok)} .bar.warn > i{background:var(--warn)} .bar.bad > i{background:var(--bad)}
+  .pct{font-variant-numeric:tabular-nums;font-weight:600;min-width:38px;text-align:right}
+  .spark{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted);letter-spacing:-1px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line-2)}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
+  .mini{font-size:12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}.app{grid-template-columns:1fr}.nav{position:static;height:auto}}
+  /* fake modal */
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);max-width:460px;margin:10px 0}
+  .modal .mh{padding:16px 18px 8px;font-size:16px;font-weight:700}
+  .modal .mb{padding:6px 18px 4px}
+  .modal .mf{padding:12px 18px 16px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--line-2);margin-top:10px}
+  .field{margin:12px 0}
+  .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:5px}
+  .field input,.field textarea,.field select{width:100%;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:8px;padding:8px 10px;font:inherit}
+  .swatches{display:flex;gap:7px;flex-wrap:wrap}
+  .swatches i{width:20px;height:20px;border-radius:50%;display:inline-block;cursor:pointer;border:2px solid transparent}
+  .swatches i.sel{border-color:var(--ink)}
+  .checkrow{display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:8px;cursor:pointer}
+  .checkrow:hover{background:var(--panel-2)}
+  .box{width:16px;height:16px;border-radius:4px;border:1px solid var(--line);flex:none;display:grid;place-items:center;font-size:11px;color:#fff}
+  .box.on{background:var(--accent);border-color:var(--accent)}
+  .dd{border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
+  .dd .cur{padding:8px 10px;display:flex;justify-content:space-between;cursor:pointer}
+  .dd .opts{border-top:1px solid var(--line-2);padding:4px;max-height:210px;overflow:auto}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:6px 0 0}
+  .tabs button{border:0;background:none;padding:8px 12px;color:var(--ink-soft);cursor:pointer;border-bottom:2px solid transparent}
+  .tabs button.active{color:var(--ink);border-color:var(--accent);font-weight:600}
+  .legend{font-size:11px;color:var(--muted)}
+  .chart{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--ink-soft);white-space:pre;overflow:auto;background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:12px}
+  .flag{font-size:11px;color:var(--warn)}
+  .zap{color:var(--warn)}
+  ul.tick{list-style:none;padding:0;margin:8px 0}
+  ul.tick li{padding:3px 0;color:var(--ink-soft)}
+  ul.tick li::before{content:"•  ";color:var(--muted)}
+  .iconbtn{position:relative;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink-soft);cursor:pointer;font-size:15px}
+  .iconbtn.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .dotbadge{position:absolute;top:-1px;right:-1px;width:9px;height:9px;border-radius:50%;background:var(--ok);border:2px solid var(--panel)}
+  .drop{border:2px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--ink-soft);font-size:12.5px;cursor:pointer}
+  .drop:hover{border-color:var(--accent)}
+  .evi{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .evi .thumb{border:1px solid var(--line);border-radius:8px;overflow:hidden;width:120px;background:var(--panel-2)}
+  .evi .thumb .ph{height:64px;display:grid;place-items:center;font-size:22px;background:var(--bar-track);color:var(--muted)}
+  .evi .thumb .cap{padding:5px 7px;font-size:10.5px;display:flex;justify-content:space-between;gap:4px}
+  .evi .thumb .cap a{font-size:11px}
+  code{background:var(--panel-2);border:1px solid var(--line-2);border-radius:4px;padding:0 4px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="nav">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20 L4 6 L13 6 L13 20"/><path d="M13 9 L20 9 L20 20 L4 20"/><path d="M12 3 L12 6"/></svg>
+      GoalsHQ
+    </div>
+    <button class="themebtn" onclick="toggleTheme()">◐ Toggle light / dark</button>
+    <h4>Part 1 · Strategy</h4>
+    <button data-s="s-sidebar" class="active">Sidebar entry</button>
+    <button data-s="s-create">Create Strategy modal</button>
+    <button data-s="s-edit">Edit Strategy modal</button>
+    <button data-s="s-detail">Strategy detail page</button>
+    <button data-s="s-overview">Strategy overview</button>
+    <button data-s="s-goal">Goal detail · measurement</button>
+    <button data-s="s-project">Project modal · Strategies</button>
+    <h4>Part 2 · Records & Reporting</h4>
+    <button data-s="p-records">Records panel</button>
+    <button data-s="p-kr">Key Result · check-in + tree</button>
+    <button data-s="p-taskresult">Task completion · log result</button>
+    <button data-s="p-milestone">Milestone · auto-achieve</button>
+    <button data-s="p-report">Report tab</button>
+    <h4>Reference</h4>
+    <button data-s="ref-model">The model in one page</button>
+    <button data-s="ref-ui">Progressive-disclosure rules</button>
+  </aside>
+
+  <main class="main">
+
+  <!-- ================= P1 · SIDEBAR ================= -->
+  <section class="screen show" id="s-sidebar">
+    <h2>Strategy — sidebar entry</h2>
+    <p class="lede">Strategy sits just below Goals. Each row shows its colour dot, name, and a small
+      bar that is the <b>plain average of its linked projects' progress</b> (a grouping summary — never
+      fed into any goal's number). Goal-less strategies still appear here.</p>
+    <div class="card" style="max-width:320px">
+      <div class="bd" style="padding:6px 4px">
+        <div class="row spread" style="padding:6px 10px"><b class="soft" style="font-size:11px;letter-spacing:.08em">STRATEGY</b><button class="kbtn ghost" title="new">＋</button></div>
+        <div class="row" style="padding:6px 10px;gap:8px"><span class="dot" style="background:#2f9e6b"></span> Real Estate <span class="bar ok" style="max-width:52px"><i style="width:49%"></i></span><span class="mini muted">49</span></div>
+        <div class="row" style="padding:6px 10px;gap:8px"><span class="dot" style="background:#3b6fd4"></span> Systems Security <span class="bar ok" style="max-width:52px"><i style="width:71%"></i></span><span class="mini muted">71</span></div>
+        <div class="row" style="padding:6px 10px;gap:8px"><span class="dot" style="background:#8a56d6"></span> Content Engine <span class="mini muted">— no data</span></div>
+        <div class="row" style="padding:6px 10px"><span class="mini muted">… 1 paused</span></div>
+        <div class="row" style="padding:6px 10px;gap:8px"><b class="soft" style="font-size:11px;letter-spacing:.08em">ARCHIVE</b></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= P1 · CREATE ================= -->
+  <section class="screen" id="s-create">
+    <h2>Create Strategy modal — progressive disclosure</h2>
+    <p class="lede">Same pattern as <b>Project</b> creation in your video: only <b>name + description</b>
+      are shown. Optional fields live behind the icon row — click one to reveal its control. A filled
+      field gets a green dot on its icon. Only name is required.</p>
+    <div class="modal">
+      <div class="mh">New strategy</div>
+      <div class="mb">
+        <div class="field"><label>Name</label><input value="Real Estate"></div>
+        <div class="field" style="margin-bottom:4px"><label>Description</label><textarea rows="2">Everything property: rentals, flips, the REIT idea.</textarea></div>
+      </div>
+      <div class="row" style="gap:6px;padding:8px 16px;border-top:1px solid var(--line-2)">
+        <button class="iconbtn" title="Goal">⚑</button>
+        <button class="iconbtn" title="Projects">▤</button>
+        <button class="iconbtn" title="Colour"><span class="dotbadge" style="background:#2f9e6b"></span>◑</button>
+        <button class="iconbtn" title="Metrics">▦</button>
+        <span class="legend" style="margin-left:6px">nothing else on screen until you pick one</span>
+      </div>
+      <div class="mf"><button class="kbtn ghost">Cancel</button><button class="kbtn primary">Create</button></div>
+    </div>
+    <div class="note">Icons ↦ <b>⚑</b> Goal &nbsp; <b>▤</b> Projects &nbsp; <b>◑</b> Colour &nbsp; <b>▦</b> Metrics editable/display-only.
+      Mirrors <b>ProjectModal.tsx</b> <code>expandedSections</code> + dot-badge (lines 81–89, 718–868).</div>
+  </section>
+
+  <!-- ================= P1 · EDIT ================= -->
+  <section class="screen" id="s-edit">
+    <h2>Edit Strategy modal — two sections expanded</h2>
+    <p class="lede">Here the user has clicked <b>Projects</b> and <b>Goal</b>. Everything still
+      collapsed by default; each active icon is highlighted. The Projects control is the exact
+      checkbox dropdown from the Area modal.</p>
+    <div class="modal">
+      <div class="mh">Real Estate</div>
+      <div class="mb">
+        <div class="field"><label>Name</label><input value="Real Estate"></div>
+        <div class="field"><label>Description</label><textarea rows="2">Everything property: rentals, flips, the REIT idea.</textarea></div>
+        <div class="field"><label>⚑ Goal</label>
+          <select><option>No goal</option><option selected>To make my first million dollars by 18 May 2027</option></select>
+        </div>
+        <div class="field"><label>▤ Projects</label>
+          <div class="dd">
+            <div class="cur"><span>Rental acquisition, Flip&nbsp;#1</span><span>▴</span></div>
+            <div class="opts">
+              <div class="checkrow" onclick="tog(this)"><span class="box on">✓</span>▣ Rental acquisition <span class="pill" style="margin-left:auto">in&nbsp;progress</span></div>
+              <div class="checkrow" onclick="tog(this)"><span class="box on">✓</span>▣ Flip&nbsp;#1 <span class="pill" style="margin-left:auto">planned</span></div>
+              <div class="checkrow" onclick="tog(this)"><span class="box">&nbsp;</span>▣ REIT research <span class="pill" style="margin-left:auto">not&nbsp;started</span></div>
+              <div class="checkrow" onclick="tog(this)"><span class="box">&nbsp;</span>▣ Warm-contact list <span class="pill" style="margin-left:auto">in&nbsp;progress</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="row" style="gap:6px;padding:8px 16px;border-top:1px solid var(--line-2)">
+        <button class="iconbtn active" title="Goal"><span class="dotbadge"></span>⚑</button>
+        <button class="iconbtn active" title="Projects"><span class="dotbadge"></span>▤</button>
+        <button class="iconbtn" title="Colour"><span class="dotbadge" style="background:#2f9e6b"></span>◑</button>
+        <button class="iconbtn" title="Metrics">▦</button>
+      </div>
+      <div class="mf"><button class="kbtn ghost">Cancel</button><button class="kbtn primary">Update</button></div>
+    </div>
+    <div class="note"><b>▦ Metrics</b> (when expanded): a two-option toggle — “Key Results editable” /
+      “Display-only” — shown only once the strategy has KRs.</div>
+  </section>
+
+  <!-- ================= P1 · DETAIL ================= -->
+  <section class="screen" id="s-detail">
+    <h2>Strategy detail page</h2>
+    <p class="lede">Header + grouping summary + project roster + optional Key Results / Milestones,
+      then the Part 2 <b>Records</b> and <b>Report</b> tabs.</p>
+    <div class="card">
+      <div class="hd">
+        <span class="dot" style="background:#2f9e6b;width:12px;height:12px"></span>
+        <b style="font-size:16px;letter-spacing:.04em">REAL ESTATE</b>
+        <button class="kbtn" style="margin-left:auto">✎ Edit</button>
+      </div>
+      <div class="bd">
+        <div class="soft">Everything property: rentals, flips, the REIT idea.</div>
+        <div class="row" style="gap:16px;margin-top:8px">
+          <span class="soft">Goal: <a href="#">▸ To make my first million dollars by 18 May 2027</a></span>
+          <span class="pill ok">active</span>
+        </div>
+      </div>
+      <div class="bd">
+        <div class="row spread"><b>GROUPING SUMMARY</b><span class="legend">avg of 3 projects</span></div>
+        <div class="row" style="margin-top:8px">
+          <span class="bar warn"><i style="width:49%"></i></span><span class="pct">49%</span>
+          <span class="pill warn">at&nbsp;risk</span><span class="spark">⁀‿⁀‿⁀‿</span><span class="legend">30d</span>
+        </div>
+        <div class="note" style="margin:10px 0 0">This number is a plain mean of the three projects below.
+          It is <b>display-only</b> and is <b>never added into the goal's execution %</b>.</div>
+      </div>
+      <div class="bd">
+        <div class="row spread"><b>PROJECTS (3)</b><span class="legend">2 in progress · 1 planned · 0 done</span></div>
+        <table style="margin-top:6px">
+          <tr><td>▣ Rental acquisition</td><td style="width:170px"><span class="bar ok"><i style="width:61%"></i></span></td><td class="pct">61%</td><td><span class="pill">in progress</span></td><td class="mini muted">⤺ unlink</td></tr>
+          <tr><td>▣ Flip #1</td><td><span class="bar warn"><i style="width:34%"></i></span></td><td class="pct">34%</td><td><span class="pill">planned</span></td><td class="mini muted">⤺ unlink</td></tr>
+          <tr><td>▣ REIT research</td><td><span class="bar"><i style="width:2%"></i></span></td><td class="pct">0%</td><td><span class="pill">not started</span></td><td class="mini muted">⤺ unlink</td></tr>
+        </table>
+      </div>
+      <div class="bd">
+        <div class="row spread"><b>KEY RESULTS</b><span class="legend">context — not rolled into the goal · editable</span></div>
+        <table style="margin-top:6px">
+          <tr><td>Doors owned</td><td>4 ▸ 10</td><td style="width:150px"><span class="bar"><i style="width:33%"></i></span></td><td class="mini"><a href="#">+ check-in</a></td></tr>
+          <tr><td>Portfolio value</td><td>$220k ▸ $1M</td><td><span class="bar"><i style="width:22%"></i></span></td><td class="mini"><a href="#">+ check-in</a></td></tr>
+        </table>
+        <div class="row spread" style="margin-top:14px"><b>MILESTONES</b></div>
+        <ul class="tick">
+          <li>☑ First rental cash-flow positive — 2026-11-01 <span class="zap">⚡ auto</span></li>
+          <li>☐ REIT entity registered — 2027-02-01</li>
+        </ul>
+      </div>
+      <div class="bd" style="background:var(--panel-2)">
+        <div class="tabs"><button class="active">Overview</button><button>Records</button><button>Report</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= P1 · OVERVIEW ================= -->
+  <section class="screen" id="s-overview">
+    <h2>Strategy overview (/strategy)</h2>
+    <p class="lede">Goal cards group their strategies; each strategy row carries the project-average
+      bar + health. A separate <b>Unassigned strategies</b> section holds goal-less ones.</p>
+    <div class="card">
+      <div class="hd"><b>To make my first million dollars by 18 May 2027</b>
+        <span class="bar warn" style="max-width:120px"><i style="width:52%"></i></span><span class="pct">52%</span>
+        <span class="pill warn">at risk</span><span class="legend">· Finance</span></div>
+      <div class="bd">
+        <div class="row" style="gap:8px;padding:6px 0"><span class="dot" style="background:#2f9e6b"></span> Real Estate
+          <span class="bar warn" style="max-width:90px"><i style="width:49%"></i></span><span class="mini">49</span>
+          <span class="pill warn">at risk</span><span class="legend">3 projects</span></div>
+        <div class="row" style="gap:8px;padding:6px 0"><span class="dot" style="background:#3b6fd4"></span> Systems Security
+          <span class="bar ok" style="max-width:90px"><i style="width:71%"></i></span><span class="mini">71</span>
+          <span class="pill ok">on track</span><span class="legend">5 projects</span></div>
+        <div style="padding:6px 0"><a href="#">＋ New strategy</a></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="hd"><b>Unassigned strategies</b><span class="legend">goal = none</span></div>
+      <div class="bd">
+        <div class="row" style="gap:8px"><span class="dot" style="background:#8a56d6"></span> Content Engine
+          <span class="mini muted">— no data</span><span class="legend">0 projects</span>
+          <span style="margin-left:auto" class="mini muted">✎ &nbsp; 🗑</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= P1 · GOAL MEASUREMENT ================= -->
+  <section class="screen" id="s-goal">
+    <h2>Goal detail — measurement block</h2>
+    <p class="lede"><b>Execution</b> (task/project completion, always on) and <b>Outcome</b>
+      (Key Results / Milestones, optional) shown side by side — never blended. Strategies appear
+      as a grouping list that is explicitly <i>not</i> part of the numbers above.</p>
+    <div class="card">
+      <div class="hd"><b>PROGRESS</b></div>
+      <div class="bd">
+        <div class="grid2">
+          <div class="card" style="margin:0">
+            <div class="bd">
+              <div class="legend">EXECUTION</div>
+              <div class="row" style="margin:6px 0"><span class="bar warn"><i style="width:58%"></i></span><span class="pct">58%</span></div>
+              <div class="row" style="gap:10px"><span class="pill warn">at risk</span><span class="spark">⁀‿⁀‿</span></div>
+              <div class="mini muted" style="margin-top:6px">from 10 projects + 4 direct tasks</div>
+            </div>
+          </div>
+          <div class="card" style="margin:0">
+            <div class="bd">
+              <div class="legend">OUTCOME</div>
+              <div class="row" style="margin:6px 0"><span class="bar bad"><i style="width:31%"></i></span><span class="pct">31%</span></div>
+              <div class="row" style="gap:10px"><span class="pill bad">off track</span><span class="spark">⁀‿‿⁀</span></div>
+              <div class="mini muted" style="margin-top:6px">from 3 key results</div>
+            </div>
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px;gap:8px"><span class="soft">Outcome metrics:</span>
+          <label class="row" style="gap:6px"><input type="checkbox" checked> enabled</label></div>
+      </div>
+      <div class="bd">
+        <div class="row spread"><b>KEY RESULTS</b><span class="legend">drive Outcome</span></div>
+        <table style="margin-top:6px">
+          <tr><td>Net profit</td><td>$210k ▸ $1,000,000</td><td style="width:140px"><span class="bar bad"><i style="width:21%"></i></span></td><td><span class="tag">roll up child KRs</span></td></tr>
+          <tr><td>Scopus papers</td><td>1 ▸ 10</td><td><span class="bar bad"><i style="width:10%"></i></span></td><td><span class="tag">Σ records</span></td></tr>
+        </table>
+      </div>
+      <div class="bd">
+        <div class="row spread"><b>STRATEGIES</b><span class="legend">grouping — not part of the numbers above</span></div>
+        <div class="row" style="gap:8px;padding:6px 0"><span class="dot" style="background:#2f9e6b"></span> Real Estate
+          <span class="bar warn" style="max-width:90px"><i style="width:49%"></i></span><span class="mini">49</span>
+          <span class="pill warn">at risk</span><span class="legend">3 proj</span><span style="margin-left:auto">▸</span></div>
+        <div class="row" style="gap:8px;padding:6px 0"><span class="dot" style="background:#3b6fd4"></span> Systems Security
+          <span class="bar ok" style="max-width:90px"><i style="width:71%"></i></span><span class="mini">71</span>
+          <span class="pill ok">on track</span><span class="legend">5 proj</span><span style="margin-left:auto">▸</span></div>
+        <div style="padding:6px 0"><a href="#">＋ New strategy</a></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= P1 · PROJECT MODAL ================= -->
+  <section class="screen" id="s-project">
+    <h2>Project modal — new Strategies selector</h2>
+    <p class="lede">Alongside the existing optional <b>Area</b> and <b>Goal</b> dropdowns, a
+      <b>Strategies</b> multi-select (same checkbox pattern). Editable from both sides.</p>
+    <div class="modal">
+      <div class="mh">Warm-contact list</div>
+      <div class="mb">
+        <div class="field"><label>Area</label><select><option>None</option><option selected>Finance</option></select></div>
+        <div class="field"><label>Goal</label><select><option>No goal</option><option selected>To make my first million dollars by 18 May 2027</option></select></div>
+        <div class="field"><label>Strategies <span class="muted">(optional · GoalsHQ)</span></label>
+          <div class="dd">
+            <div class="cur"><span>Real Estate</span><span>▴</span></div>
+            <div class="opts">
+              <div class="checkrow" onclick="tog(this)"><span class="box on">✓</span> Real Estate</div>
+              <div class="checkrow" onclick="tog(this)"><span class="box">&nbsp;</span> Systems Security</div>
+              <div class="checkrow" onclick="tog(this)"><span class="box">&nbsp;</span> Content Engine</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="mf"><button class="kbtn ghost">Cancel</button><button class="kbtn primary">Save</button></div>
+    </div>
+  </section>
+
+  <!-- ================= P2 · RECORDS ================= -->
+  <section class="screen" id="p-records">
+    <h2>Records panel</h2>
+    <p class="lede">One dated ledger primitive, attached to a Goal / Strategy / Project. The
+      <b>template</b> preset just changes which columns are shown — the underlying row is the same.</p>
+
+    <div class="card">
+      <div class="hd"><b>RECORDS</b>
+        <select style="margin-left:auto;width:auto" onchange="recTpl(this.value)"><option value="ledger">Template: Contribution Ledger</option><option value="build">Template: Build Log</option></select>
+        <button class="kbtn">＋ Add row</button></div>
+      <div class="bd" style="background:var(--panel-2)">
+        <div class="mini soft" style="margin-bottom:6px">New row — minimal by default</div>
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <input style="width:130px" value="2026-09-21">
+          <input style="flex:1;min-width:160px" placeholder="Title">
+          <input style="width:110px" placeholder="Amount">
+          <button class="kbtn">＋ Add</button>
+          <button class="kbtn ghost" id="recmore" onclick="document.getElementById('recmorebox').style.display = this.dataset.o?'':'none'; this.dataset.o=this.dataset.o?'':'1'">⋯ more</button>
+        </div>
+        <div id="recmorebox" style="display:none;margin-top:10px">
+          <div class="grid2">
+            <div class="field" style="margin:0"><label>Unit</label><input placeholder="$ / leads / papers"></div>
+            <div class="field" style="margin:0"><label>Status / category</label><input></div>
+            <div class="field" style="margin:0"><label>Counts toward KR</label><select><option>—</option><option>Net profit</option></select></div>
+            <div class="field" style="margin:0"><label>Evidence link (URL)</label><input placeholder="https://…"></div>
+          </div>
+          <div class="field" style="margin:10px 0 0"><label>Evidence files</label>
+            <div class="drop">⬆ Drag files here or click — any allowed format, multiple</div>
+          </div>
+          <div class="field" style="margin:10px 0 0"><label>Note (markdown)</label><textarea rows="2"></textarea></div>
+        </div>
+      </div>
+      <div class="bd" id="rec-ledger">
+        <table>
+          <tr><th>Date</th><th>Title</th><th>Amount</th><th>Counts →</th><th>Evidence</th></tr>
+          <tr><td>2026-09-05</td><td>FinTech A — Path S deposit</td><td>$11,000</td><td>Net profit</td><td><a href="#">invoice-0092</a></td></tr>
+          <tr><td>2026-09-12</td><td>FinTech A — milestone 2</td><td>$9,000</td><td>Net profit</td><td><a href="#">invoice-0104</a></td></tr>
+        </table>
+        <div class="mini soft" style="margin-top:10px">Σ toward “Net profit”: <b>$20,000</b> &nbsp;·&nbsp; entries: 2 &nbsp;·&nbsp; latest: 2026-09-12</div>
+      </div>
+      <div class="bd" id="rec-build" style="display:none">
+        <table>
+          <tr><th>Date</th><th>Title</th><th>Category</th><th>Status (tier)</th></tr>
+          <tr><td>2026-09-06</td><td>Audit checklist — prompt-injection section</td><td>Path S</td><td><span class="pill">Feature</span></td></tr>
+          <tr><td>2026-09-20</td><td>De-identified case study (complete)</td><td>Case Study</td><td><span class="pill ok">Product</span></td></tr>
+        </table>
+        <div class="mini soft" style="margin-top:10px">By category: Path S ▓▓▓ 3 &nbsp;·&nbsp; Case Study ▓ 1 &nbsp;·&nbsp; Research ▓▓ 2</div>
+      </div>
+    </div>
+    <div class="note">Row click expands the markdown <b>body</b> (the qualitative note) and opens any linked task.</div>
+  </section>
+
+  <!-- ================= P2 · KR ================= -->
+  <section class="screen" id="p-kr">
+    <h2>Key Result — check-in history + propagation</h2>
+    <p class="lede">A KR is a <b>leaf</b> (its own source) or a <b>rollup</b> (sums child KRs). "Propagate
+      downward" creates child KRs on chosen strategies/projects; you set each child target, and the
+      parent shows coverage.</p>
+
+    <div class="card">
+      <div class="hd"><b>Doors owned</b><span class="legend">leaf · source: manual</span><button class="kbtn" style="margin-left:auto">＋ Check in</button></div>
+      <div class="bd">
+        <div class="row">baseline 4 → current 6 → target 10 <span class="bar" style="max-width:180px;margin-left:12px"><i style="width:33%"></i></span><span class="pct">33%</span></div>
+        <div class="spark" style="margin-top:8px">·________________⁀‿⁀________ &nbsp; check-ins (5)</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="hd"><b>Net profit</b><span class="tag">rollup · Σ child KRs</span></div>
+      <div class="bd">
+        <div class="row">current $210,000 → target $1,000,000
+          <span class="bar bad" style="max-width:180px;margin-left:12px"><i style="width:21%"></i></span><span class="pct">21%</span></div>
+        <div class="flag" style="margin-top:8px">⚠ Children cover $700,000 of $1,000,000 — $300,000 unallocated</div>
+        <table style="margin-top:8px">
+          <tr><th>Contributing KR</th><th>Current / target</th><th></th><th>Source</th></tr>
+          <tr><td>● Real Estate <span class="mini muted">(strategy)</span></td><td>$80k / $400k</td><td style="width:120px"><span class="bar"><i style="width:20%"></i></span></td><td class="mini">Σ children</td></tr>
+          <tr><td style="padding-left:26px">▸ Rental acquisition <span class="mini muted">(project)</span></td><td>$80k / $250k</td><td><span class="bar"><i style="width:32%"></i></span></td><td class="mini">Σ records</td></tr>
+          <tr><td style="padding-left:26px">▸ Flip #1 <span class="mini muted">(project)</span></td><td>$0 / $150k</td><td><span class="bar"><i style="width:1%"></i></span></td><td class="mini">manual</td></tr>
+          <tr><td>● Systems Security <span class="mini muted">(strategy)</span></td><td>$130k / $300k</td><td><span class="bar"><i style="width:43%"></i></span></td><td class="mini">Σ children</td></tr>
+        </table>
+        <div style="margin-top:10px"><button class="kbtn">＋ Propagate to more projects / strategies</button></div>
+      </div>
+    </div>
+
+    <div class="modal">
+      <div class="mh">Propagate “Net profit” downward</div>
+      <div class="mb">
+        <div class="soft mini" style="margin-bottom:8px">Create a child KR on:</div>
+        <div class="checkrow"><span class="box on">✓</span> Real Estate <span class="mini muted">(strategy)</span></div>
+        <div class="checkrow" style="padding-left:34px"><span class="box on">✓</span> <span class="mini">cascade to its 3 projects too</span></div>
+        <div class="checkrow"><span class="box on">✓</span> Systems Security <span class="mini muted">(strategy)</span></div>
+        <div class="checkrow"><span class="box">&nbsp;</span> Warm-contact list <span class="mini muted">(project — in 2 strategies)</span></div>
+        <div class="checkrow" style="padding-left:34px"><span class="mini">parent: &nbsp;<label><input type="radio" name="par" checked> Real Estate</label> &nbsp; <label><input type="radio" name="par"> Systems Sec</label></span></div>
+      </div>
+      <div class="mf"><button class="kbtn ghost">Cancel</button><button class="kbtn primary">Create KRs</button></div>
+    </div>
+  </section>
+
+  <!-- ================= P2 · TASK RESULT ================= -->
+  <section class="screen" id="p-taskresult">
+    <h2>Task completion — “Log a result?” with evidence upload</h2>
+    <p class="lede">No task-level KRs. When you complete a task that produced a measurable output,
+      an optional prompt creates a <b>Record linked to that task</b>. Minimal by default —
+      <b>Value + Unit</b>; everything else behind <code>⋯ more</code>. Evidence files upload against
+      the record and stay previewable + downloadable afterwards. Dismiss the prompt → nothing created.</p>
+    <div class="card">
+      <div class="bd">
+        <div class="row"><span class="box on">✓</span> <s class="soft">Direct outreach to first 20–30 warm contacts</s> <span class="pill ok" style="margin-left:auto">completed</span></div>
+      </div>
+      <div class="bd" style="background:var(--panel-2)">
+        <div class="row spread"><b class="mini">Log a result?</b><span class="mini muted">optional ✕</span></div>
+        <div class="grid2" style="margin-top:8px">
+          <div class="field" style="margin:0"><label>Value</label><input value="6"></div>
+          <div class="field" style="margin:0"><label>Unit</label><input value="leads"></div>
+        </div>
+        <button class="kbtn ghost" style="margin-top:8px" onclick="var b=document.getElementById('trmore');b.style.display=b.style.display==='none'?'':'none'">⋯ more (note · KR · evidence)</button>
+        <div id="trmore" style="display:none">
+          <div class="field"><label>Note</label><input value="2 booked discovery calls"></div>
+          <div class="field"><label>Counts toward KR</label><select><option>—</option><option selected>Path C — qualified leads</option></select></div>
+          <div class="field"><label>Evidence link (URL)</label><input placeholder="https://… (optional)"></div>
+          <div class="field"><label>Evidence files — any format, multiple</label>
+            <div class="drop">⬆ Drag &amp; drop or click to upload</div>
+            <div class="evi">
+              <div class="thumb"><div class="ph" style="background:linear-gradient(135deg,#93b4e6,#c8d7f0);color:#25406a">🖼</div>
+                <div class="cap"><span>call-notes.png</span><a href="#">⤓</a></div></div>
+              <div class="thumb"><div class="ph">▦</div>
+                <div class="cap"><span>crm-export.xlsx</span><a href="#">⤓</a></div></div>
+              <div class="thumb"><div class="ph">📄</div>
+                <div class="cap"><span>signed-nda.pdf</span><a href="#">⤓</a></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="row spread" style="margin-top:12px"><button class="kbtn ghost">Skip</button><button class="kbtn primary">Log result</button></div>
+      </div>
+    </div>
+    <div class="note">Reuses the existing task-attachment stack (multer, whitelist, inline-safe serving,
+      <code>AttachmentPreview</code>, authenticated download) — generalised to a polymorphic
+      <code>attachments</code> table so a <b>Record</b> can own files. Image/PDF/text preview inline;
+      other formats download. Later you see the same files on the record row, in the KR's contributing
+      list, and in the Report. <b>Full traceability:</b> Record → task → KR → evidence.</div>
+  </section>
+
+  <!-- ================= P2 · MILESTONE ================= -->
+  <section class="screen" id="p-milestone">
+    <h2>Milestone — auto-achieve from tasks or a KR</h2>
+    <p class="lede">Project-level milestones already exist. New: a milestone can auto-flip to
+      <b>achieved</b> when its linked tasks complete (<b>all</b> / <b>any</b>, per milestone) or when a
+      linked Key Result crosses a threshold. Manual override always wins; reopening a task doesn't
+      un-achieve.</p>
+    <div class="card">
+      <div class="hd"><b>MILESTONES</b><span class="legend">project: Warm-contact list</span><button class="kbtn" style="margin-left:auto">＋ Add</button></div>
+      <div class="bd">
+        <div class="row spread">
+          <div><b>☐ 20 warm contacts logged</b> <span class="mini muted">— 2026-10-15</span></div>
+          <div class="mini"><span class="pill">mode: all</span></div>
+        </div>
+        <div class="mini soft" style="margin:6px 0 0">Linked tasks (2):
+          <span class="pill ok">✓ Build global list</span>
+          <span class="pill">◻ Build African list</span> → 1 of 2 done, stays pending</div>
+      </div>
+      <div class="bd">
+        <div class="row spread">
+          <div><b>☑ First $250k logged</b> <span class="mini muted">— 2026-12-31</span> <span class="zap">⚡ auto</span></div>
+          <div class="mini"><span class="pill">when KR ≥ threshold</span></div>
+        </div>
+        <div class="mini soft" style="margin:6px 0 0">Achieve when <b>Net profit</b> ≥ <b>$250,000</b> — reached 2026-12-18</div>
+      </div>
+      <div class="bd" style="background:var(--panel-2)">
+        <div class="mini soft">Editing a milestone: <span class="tag">Link tasks ▾</span> <span class="tag">all / any</span> <span class="tag">achieve when KR ⟨x⟩ ≥ ⟨n⟩</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= P2 · REPORT ================= -->
+  <section class="screen" id="p-report">
+    <h2>Report tab (per Goal / Strategy / Project)</h2>
+    <p class="lede">Quantitative panels from records / KRs / tasks, plus a qualitative narrative
+      (AI via the fallback chain, with a templated static fallback when the LLM is unavailable).
+      Printable.</p>
+    <div class="card">
+      <div class="hd"><b>REPORT · Real Estate</b><select style="width:auto;margin-left:auto"><option>This quarter</option><option>Last 30 days</option><option>All time</option></select><button class="kbtn">🖨 Print</button></div>
+      <div class="bd">
+        <div class="legend">QUANTITATIVE</div>
+        <div class="row" style="margin:8px 0"><span style="width:90px" class="mini">Execution</span><span class="bar warn"><i style="width:49%"></i></span><span class="pct">49%</span><span class="pill warn">at risk</span><span class="legend">avg of 3 projects</span></div>
+        <div class="row" style="margin:8px 0"><span style="width:90px" class="mini">Outcome</span><span class="bar bad"><i style="width:24%"></i></span><span class="pct">24%</span><span class="pill bad">off track</span><span class="legend">2 key results</span></div>
+        <div class="chart">Contribution over time ($, cumulative)
+  1M ┤                                        ______
+     │                              ________/
+     │              ______________/
+   0 ┼──────────────────────────────────────────────
+     Sep     Oct     Nov     Dec     Jan     Feb</div>
+        <div class="grid2" style="margin-top:12px">
+          <div><div class="mini soft">Records by category</div>
+            <div class="mini">Path S &nbsp;▓▓▓▓▓ 5<br>Case Study ▓▓ 2<br>Research &nbsp;▓▓▓ 3</div></div>
+          <div><div class="mini soft">Task throughput / week</div>
+            <div class="spark" style="font-size:14px">▁▃▅▂▆▄▃</div>
+            <div class="mini soft" style="margin-top:6px">Milestones ●──●──○──○ (2 of 4)</div></div>
+        </div>
+      </div>
+      <div class="bd">
+        <div class="legend">QUALITATIVE</div>
+        <div class="row" style="gap:6px;margin:6px 0"><span class="tag">▸ AI narrative</span><span class="mini muted">Sonnet · via fallback chain</span></div>
+        <p class="soft" style="margin:0">“Real Estate moved from 38% → 49% this quarter, driven mostly by Rental
+          acquisition. Flip&nbsp;#1 has stalled 3 weeks — no task activity since Aug&nbsp;30. The
+          Portfolio-value KR is well behind the pace needed for the May&nbsp;2027 target.
+          Recommended focus: unblock Flip&nbsp;#1.”</p>
+        <div class="mini soft" style="margin-top:10px">Notes compiled from records (3)</div>
+        <ul class="tick">
+          <li>2026-09-06 &nbsp;Audit checklist — “needs generalising before reuse”</li>
+          <li>2026-09-20 &nbsp;Case study — “used as sales collateral, published”</li>
+        </ul>
+        <div class="note" style="margin-top:10px">When the LLM chain is down, the AI narrative block is replaced by a
+          templated summary built from the same numbers + compiled notes — no error shown.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= REFERENCE ================= -->
+  <section class="screen" id="ref-model">
+    <h2>The model in one page</h2>
+    <div class="card"><div class="bd">
+      <table>
+        <tr><th>Concept</th><th>What it is</th><th>Progress</th></tr>
+        <tr><td><b>Goal</b></td><td>Outcome intention. Optional Area.</td><td>Execution % (projects+tasks) <i>+</i> optional Outcome % (KRs/milestones), side by side</td></tr>
+        <tr><td><b>Strategy</b></td><td><b>Grouping bucket.</b> name · description · status · colour · optional Goal · many projects</td><td>Bar/chip = <b>plain average of linked projects</b> ("avg of N"). Never feeds the goal. Optional own KRs (editable or display-only)</td></tr>
+        <tr><td><b>Project</b></td><td>Belongs to ≤1 Area, ≤1 Goal, any number of Strategies</td><td>Execution % (Task momentum) <i>+</i> optional Outcome %</td></tr>
+        <tr><td><b>Task</b></td><td>Unit of work. No task-level KRs.</td><td>Feeds Execution %; optionally logs a <b>Record</b> on completion</td></tr>
+      </table>
+      <div class="grid2" style="margin-top:16px">
+        <div class="card" style="margin:0"><div class="bd">
+          <b>Record</b><div class="mini soft">the raw dated ledger — what happened, when, evidence</div>
+          <div class="mini" style="margin-top:6px">→ feeds a KR via <span class="tag">Σ records</span> / <span class="tag">count</span></div>
+        </div></div>
+        <div class="card" style="margin:0"><div class="bd">
+          <b>Key Result</b><div class="mini soft">continuous baseline → current → target</div>
+          <div class="mini" style="margin-top:6px">leaf (records / task count / manual) <i>or</i> rollup (Σ child KRs)</div>
+        </div></div>
+        <div class="card" style="margin:0"><div class="bd">
+          <b>Milestone</b><div class="mini soft">dated pending/achieved/missed checkpoint</div>
+          <div class="mini" style="margin-top:6px">auto-achieves from linked task(s) (all/any) or a KR threshold</div>
+        </div></div>
+        <div class="card" style="margin:0"><div class="bd">
+          <b>Report</b><div class="mini soft">per entity: quantitative panels + AI/static narrative</div>
+        </div></div>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- ================= REFERENCE · UI ================= -->
+  <section class="screen" id="ref-ui">
+    <h2>Progressive-disclosure rules</h2>
+    <p class="lede">Every new GoalsHQ screen reuses patterns already in the codebase and keeps the
+      default view minimal.</p>
+    <div class="card"><div class="bd">
+      <ul class="tick">
+        <li>An entity with <b>metrics not enabled</b> looks exactly like today — zero new UI.</li>
+        <li>Enabling a capability reveals the <b>minimum</b> control — one KR field, one record row — never a panel of inputs.</li>
+        <li>Extra detail is always <b>one more click</b> — a chevron, a <code>⋯ more</code>, an icon toggle.</li>
+        <li>Strategy modal = <b>ProjectModal</b> pattern: <code>expandedSections</code> + dot-badge icon row.</li>
+        <li>Evidence upload / preview / download = the existing <b>task-attachment</b> stack, generalised.</li>
+        <li>Colour = <code>Shared/ColorPicker</code>; project/goal pickers = the <b>AreaModal</b> checkbox dropdown.</li>
+        <li>Report AI narrative is fetched <b>only when its card is opened</b> — never on page load.</li>
+      </ul>
+      <div class="note">Reused as-is: <code>ProjectModal.tsx</code> · <code>TaskAttachmentsSection.tsx</code> ·
+        <code>AttachmentPreview.tsx</code> · <code>attachmentsService.ts</code> · <code>ColorPicker.tsx</code> ·
+        <code>AreaModal.tsx</code> checkbox dropdown · <code>ReportsPage.tsx</code> SVG charts.</div>
+    </div></div>
+  </section>
+
+  </main>
+</div>
+
+<script>
+  const btns=[...document.querySelectorAll('.nav button[data-s]')];
+  btns.forEach(b=>b.onclick=()=>{
+    btns.forEach(x=>x.classList.toggle('active',x===b));
+    document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('show',s.id===b.dataset.s));
+    window.scrollTo(0,0);
+  });
+  function toggleTheme(){
+    const r=document.documentElement;
+    r.dataset.theme = r.dataset.theme==='dark' ? 'light' : 'dark';
+  }
+  function tog(el){
+    const box=el.querySelector('.box');
+    box.classList.toggle('on');
+    box.textContent = box.classList.contains('on') ? '✓' : ' ';
+  }
+  function recTpl(v){
+    document.getElementById('rec-ledger').style.display = v==='ledger'?'':'none';
+    document.getElementById('rec-build').style.display  = v==='build' ?'':'none';
+  }
+</script>
+</body>
+</html>
