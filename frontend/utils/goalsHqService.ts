@@ -6,6 +6,8 @@ import { GoalSettings, ParentType } from '../entities/GoalSettings';
 import { Strategy } from '../entities/Strategy';
 import { KeyResult } from '../entities/KeyResult';
 import { Milestone } from '../entities/Milestone';
+import { GoalshqRecord, RecordInput, KeyResultEntry } from '../entities/Record';
+import { GoalshqReport } from '../entities/GoalshqReport';
 
 export const fetchGoalshqGoals = async (): Promise<GoalSummary[]> => {
     const response = await fetch(getApiPath('goalshq/goals'), {
@@ -386,9 +388,6 @@ export interface ExpandedTask {
 }
 
 /* ============================================================ Part 2 */
-
-import { GoalshqRecord, RecordInput, KeyResultEntry } from '../entities/Record';
-import { GoalshqReport } from '../entities/GoalshqReport';
 
 type P2Parent = 'goal' | 'strategy' | 'project';
 
