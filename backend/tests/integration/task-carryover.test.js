@@ -233,7 +233,7 @@ describe('Task carryover (Phase D)', () => {
             await GoalshqGoalSettings.create({
                 goal_id: goal.id,
                 user_id: user.id,
-                cached_health: 'off_track',
+                cached_execution_health: 'off_track',
             });
             await Task.create({
                 user_id: user.id,
@@ -262,7 +262,7 @@ describe('Task carryover (Phase D)', () => {
             await GoalshqGoalSettings.create({
                 goal_id: goal.id,
                 user_id: user.id,
-                cached_health: 'on_track',
+                cached_execution_health: 'on_track',
             });
             await Task.create({
                 user_id: user.id,

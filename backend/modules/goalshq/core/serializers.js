@@ -9,40 +9,57 @@ function num(v) {
     return v == null ? null : Number(v);
 }
 
+/**
+ * Goal / Project settings: always an execution number; an outcome number only
+ * when `metrics_enabled`. Shown side by side, never blended.
+ */
 function serializeSettings(settings) {
     if (!settings) return null;
     return {
-        progress_mode: settings.progress_mode,
-        importance: settings.importance,
-        weight_by_priority: settings.weight_by_priority,
-        start_date: settings.start_date,
+        metrics_enabled: !!settings.metrics_enabled,
+        start_date: settings.start_date ?? null,
         manual_percent: num(settings.manual_percent),
-        percent: num(settings.cached_percent),
-        health: settings.cached_health || 'no_data',
+        execution_percent: num(settings.cached_execution_percent),
+        execution_health: settings.cached_execution_health || 'no_data',
+        outcome_percent: settings.metrics_enabled
+            ? num(settings.cached_outcome_percent)
+            : null,
+        outcome_health: settings.metrics_enabled
+            ? settings.cached_outcome_health || 'no_data'
+            : 'no_data',
         computed_at: settings.cached_computed_at,
     };
 }
 
+/**
+ * A strategy: a grouping bucket. `summary` is the *grouping average* of its
+ * linked projects' execution % — display-only, never a goal-rollup input.
+ */
 function serializeStrategy(strategy, extra = {}) {
     return {
         uid: strategy.uid,
         name: strategy.name,
         description: strategy.description,
-        kind: strategy.kind,
+        color: strategy.color || null,
         status: strategy.status,
-        horizon_label: strategy.horizon_label,
-        start_date: strategy.start_date,
-        target_date: strategy.target_date,
-        importance: strategy.importance,
-        progress_mode: strategy.progress_mode,
-        weight_by_priority: strategy.weight_by_priority,
-        manual_percent: num(strategy.manual_percent),
+        metrics_editable: strategy.metrics_editable !== false,
         sort_order: strategy.sort_order,
-        percent: num(strategy.cached_percent),
-        health: strategy.cached_health || 'no_data',
-        computed_at: strategy.cached_computed_at,
+        summary: {
+            percent: num(strategy.cached_percent),
+            health: strategy.cached_health || 'no_data',
+            source: 'avg of linked projects',
+            computed_at: strategy.cached_computed_at,
+        },
         created_at: strategy.created_at,
         updated_at: strategy.updated_at,
+        // goal / projects / project_counts / key_results / milestones / trend
+        // are attached by the caller via `extra`.
+        goal: null,
+        projects: [],
+        project_counts: null,
+        key_results: [],
+        milestones: [],
+        trend: [],
         ...extra,
     };
 }
@@ -78,6 +95,7 @@ function serializeMilestone(m) {
 function serializeSnapshot(s) {
     return {
         date: s.snapshot_date,
+        kind: s.kind || 'execution',
         percent: num(s.percent),
         health: s.health,
         source: s.source,
@@ -91,7 +109,7 @@ function serializeProjectRef(project, percent) {
         status: project.status,
         priority: project.priority,
         color: project.color,
-        percent: percent == null ? null : Number(percent),
+        execution_percent: percent == null ? null : Number(percent),
     };
 }
 
@@ -123,18 +141,31 @@ function serializeGoalSummary(
               }
             : null,
         settings: serializeSettings(settings),
-        percent: settings ? num(settings.cached_percent) : null,
-        health: settings ? settings.cached_health || 'no_data' : 'no_data',
+        execution_percent: settings
+            ? num(settings.cached_execution_percent)
+            : null,
+        execution_health: settings
+            ? settings.cached_execution_health || 'no_data'
+            : 'no_data',
+        outcome_percent:
+            settings && settings.metrics_enabled
+                ? num(settings.cached_outcome_percent)
+                : null,
+        outcome_health:
+            settings && settings.metrics_enabled
+                ? settings.cached_outcome_health || 'no_data'
+                : 'no_data',
         projects_count: projectsCount,
         tasks_count: tasksCount,
         strategies: (strategies || []).map((s) => ({
             uid: s.uid,
             name: s.name,
-            kind: s.kind,
+            color: s.color || null,
             status: s.status,
-            importance: s.importance,
-            percent: num(s.cached_percent),
-            health: s.cached_health || 'no_data',
+            summary: {
+                percent: num(s.cached_percent),
+                health: s.cached_health || 'no_data',
+            },
             project_uids: projectUidsByStrategy.get(s.id) || [],
             projects: projectsByStrategy.get(s.id) || [],
         })),

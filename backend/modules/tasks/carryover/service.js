@@ -135,7 +135,7 @@ async function classifyOverdueTasks() {
           })
         : [];
     const healthByGoalId = new Map(
-        goalSettings.map((s) => [s.goal_id, s.cached_health])
+        goalSettings.map((s) => [s.goal_id, s.cached_execution_health])
     );
 
     const allStrategyIds = [...new Set(links.map((l) => l.strategy_id))];

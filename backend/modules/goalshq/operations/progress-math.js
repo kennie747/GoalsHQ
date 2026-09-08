@@ -65,6 +65,26 @@ function milestonePercent(milestones) {
 }
 
 /**
+ * The "outcome" number for a goal/strategy/project: the mean of whichever of
+ * {key-result mean, milestone ratio} is defined. null when neither is.
+ */
+function outcomePercent(keyResults, milestones) {
+    const parts = [
+        aggregateKeyResults(keyResults),
+        milestonePercent(milestones),
+    ].filter((p) => p != null);
+    if (parts.length === 0) return null;
+    return round1(parts.reduce((a, b) => a + b, 0) / parts.length);
+}
+
+/** Unweighted mean of a list of percentages; null when all are null/empty. */
+function mean(percents) {
+    const vals = (percents || []).filter((p) => p != null);
+    if (vals.length === 0) return null;
+    return round1(vals.reduce((a, b) => a + b, 0) / vals.length);
+}
+
+/**
  * Percentage from a task bucket.
  * @param {{doneWeight:number,totalWeight:number}} bucket
  * @returns {number|null} null when the bucket has no countable tasks
@@ -135,6 +155,8 @@ module.exports = {
     keyResultPercent,
     aggregateKeyResults,
     milestonePercent,
+    outcomePercent,
+    mean,
     taskBucketPercent,
     weightedAverage,
     expectedPercent,

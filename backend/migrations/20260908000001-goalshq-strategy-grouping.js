@@ -89,18 +89,45 @@ module.exports = {
         const dialect = queryInterface.sequelize.getDialect();
         if (dialect !== 'sqlite') {
             // Non-sqlite path: plain column ops.
-            const { safeAddColumns, safeChangeColumn, safeRemoveColumn } =
-                require('../utils/migration-utils');
+            const {
+                safeAddColumns,
+                safeChangeColumn,
+                safeRemoveColumn,
+            } = require('../utils/migration-utils');
             const { DataTypes } = require('sequelize');
             await safeAddColumns(queryInterface, 'goalshq_strategies', [
-                { name: 'color', definition: { type: DataTypes.STRING(50), allowNull: true } },
-                { name: 'metrics_editable', definition: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true } },
+                {
+                    name: 'color',
+                    definition: { type: DataTypes.STRING(50), allowNull: true },
+                },
+                {
+                    name: 'metrics_editable',
+                    definition: {
+                        type: DataTypes.BOOLEAN,
+                        allowNull: false,
+                        defaultValue: true,
+                    },
+                },
             ]);
-            await safeChangeColumn(queryInterface, 'goalshq_strategies', 'goal_id', {
-                type: DataTypes.INTEGER,
-                allowNull: true,
-            });
-            for (const c of ['kind', 'progress_mode', 'weight_by_priority', 'manual_percent', 'importance', 'horizon_label', 'start_date', 'target_date']) {
+            await safeChangeColumn(
+                queryInterface,
+                'goalshq_strategies',
+                'goal_id',
+                {
+                    type: DataTypes.INTEGER,
+                    allowNull: true,
+                }
+            );
+            for (const c of [
+                'kind',
+                'progress_mode',
+                'weight_by_priority',
+                'manual_percent',
+                'importance',
+                'horizon_label',
+                'start_date',
+                'target_date',
+            ]) {
                 await safeRemoveColumn(queryInterface, 'goalshq_strategies', c);
             }
             return;

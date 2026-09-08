@@ -120,13 +120,24 @@ async function strategyByUid(userId, uid) {
     return GoalshqStrategy.findOne({ where: { uid, user_id: userId } });
 }
 
+/** Every strategy the user owns (goal-linked or not), ordered for display. */
+async function strategiesForUser(userId) {
+    return GoalshqStrategy.findAll({
+        where: { user_id: userId },
+        order: [
+            ['sort_order', 'ASC'],
+            ['id', 'ASC'],
+        ],
+    });
+}
+
 async function createStrategy(data) {
     return GoalshqStrategy.create(data);
 }
 
 async function maxStrategySortOrder(goalId) {
     const row = await GoalshqStrategy.findOne({
-        where: { goal_id: goalId },
+        where: goalId == null ? { goal_id: null } : { goal_id: goalId },
         order: [['sort_order', 'DESC']],
         attributes: ['sort_order'],
     });
@@ -271,8 +282,9 @@ async function createMilestone(data) {
 
 /* ------------------------------------------------------------- snapshots */
 
-async function snapshots(parentType, parentId, { from, to, limit } = {}) {
+async function snapshots(parentType, parentId, { from, to, limit, kind } = {}) {
     const where = { parent_type: parentType, parent_id: parentId };
+    if (kind) where.kind = kind;
     if (from || to) {
         where.snapshot_date = {};
         if (from) where.snapshot_date[Op.gte] = from;
@@ -364,6 +376,7 @@ module.exports = {
     projectSettingsByIds,
     strategiesByGoalId,
     strategiesByGoalIds,
+    strategiesForUser,
     strategyByUid,
     createStrategy,
     maxStrategySortOrder,

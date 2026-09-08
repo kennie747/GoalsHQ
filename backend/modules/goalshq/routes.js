@@ -12,7 +12,7 @@ router.get('/goalshq/goals', controller.listGoals);
 router.get('/goalshq/goals/:uid', controller.getGoal);
 router.patch('/goalshq/goals/:uid/settings', controller.updateGoalSettings);
 router.get('/goalshq/goals/:uid/strategies', controller.listStrategies);
-router.post('/goalshq/goals/:uid/strategies', controller.createStrategy);
+router.post('/goalshq/goals/:uid/strategies', controller.createStrategyForGoal);
 router.post('/goalshq/goals/:uid/recompute', controller.recomputeGoal);
 
 // Projects (measurable tier — Phase A Follow-up)
@@ -21,21 +21,24 @@ router.patch(
     '/goalshq/projects/:uid/settings',
     controller.updateProjectSettings
 );
+router.put(
+    '/goalshq/projects/:uid/strategies',
+    controller.setProjectStrategies
+);
 
 // Strategies
+router.get('/goalshq/strategies', controller.listAllStrategies);
+router.post('/goalshq/strategies', controller.createStrategy);
 router.get('/goalshq/strategies/:uid', controller.getStrategy);
 router.patch('/goalshq/strategies/:uid', controller.updateStrategy);
 router.delete('/goalshq/strategies/:uid', controller.deleteStrategy);
+router.put('/goalshq/strategies/:uid/projects', controller.setStrategyProjects);
 router.post('/goalshq/strategies/:uid/projects', controller.linkProject);
 router.delete(
     '/goalshq/strategies/:uid/projects/:projectUid',
     controller.unlinkProject
 );
 router.delete('/goalshq/strategies/:uid/projects', controller.unlinkProject);
-router.patch(
-    '/goalshq/strategies/:uid/projects/:projectUid/move',
-    controller.moveProjectLink
-);
 router.post('/goalshq/strategies/:uid/recompute', controller.recomputeStrategy);
 
 // Key results (parentType = "goal" | "strategy" | "project" | "task" — a

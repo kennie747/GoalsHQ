@@ -297,8 +297,6 @@ async function fetchGoalshqContext(userId, goals) {
             const aRisk = AT_RISK_HEALTH.includes(a.cached_health) ? 0 : 1;
             const bRisk = AT_RISK_HEALTH.includes(b.cached_health) ? 0 : 1;
             if (aRisk !== bRisk) return aRisk - bRisk;
-            if (b.importance !== a.importance)
-                return b.importance - a.importance;
             return a.id - b.id;
         })
         .slice(0, MAX_CONTEXT_STRATEGIES);
@@ -452,10 +450,14 @@ function buildContextSummary({
             const horizon = g.horizon ? ` (${g.horizon})` : '';
             const target = g.target_date ? ` — target: ${g.target_date}` : '';
             const settings = goalSettingsByGoalId?.get(g.id);
-            const health =
-                settings?.cached_health && settings.cached_health !== 'no_data'
-                    ? ` [${settings.cached_health}]`
-                    : '';
+            const eh = settings?.cached_execution_health;
+            const oh = settings?.metrics_enabled
+                ? settings?.cached_outcome_health
+                : null;
+            const parts = [];
+            if (eh && eh !== 'no_data') parts.push(`exec ${eh}`);
+            if (oh && oh !== 'no_data') parts.push(`outcome ${oh}`);
+            const health = parts.length ? ` [${parts.join(', ')}]` : '';
             lines.push(`- "${g.title}"${area}${horizon}${target}${health}`);
             if (g.why) lines.push(`  Why: ${g.why}`);
         });
@@ -476,9 +478,11 @@ function buildContextSummary({
                     : '';
             const percent =
                 strategy.cached_percent != null
-                    ? ` (${Math.round(strategy.cached_percent)}%)`
+                    ? ` (avg ${Math.round(strategy.cached_percent)}% of linked projects)`
                     : '';
-            lines.push(`- "${strategy.name}"${percent}${health}${goalRef}`);
+            lines.push(
+                `- Strategy "${strategy.name}" — grouping${percent}${health}${goalRef}`
+            );
             keyResults.slice(0, 2).forEach((kr) => {
                 const pct = keyResultPercent(kr);
                 const pctStr = pct != null ? ` (${Math.round(pct)}%)` : '';

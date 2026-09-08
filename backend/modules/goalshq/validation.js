@@ -2,18 +2,13 @@
 
 const errors = require('../../shared/errors');
 const {
-    GOAL_PROGRESS_MODES,
-    STRATEGY_PROGRESS_MODES,
-    PROJECT_PROGRESS_MODES,
     PARENT_TYPES,
     KEY_RESULT_PARENT_TYPES,
-    STRATEGY_KINDS,
+    MILESTONE_PARENT_TYPES,
     STRATEGY_STATUSES,
     KR_DIRECTIONS,
     KR_AUTO_SOURCES,
     MILESTONE_STATUSES,
-    MIN_IMPORTANCE,
-    MAX_IMPORTANCE,
 } = require('./operations/constants');
 
 const { ValidationError } = errors;
@@ -30,16 +25,6 @@ function assertEnum(value, allowed, field) {
     if (!allowed.includes(value)) {
         throw new ValidationError(
             `${field} must be one of: ${allowed.join(', ')}`
-        );
-    }
-}
-
-function assertImportance(value) {
-    if (value === undefined) return;
-    const n = Number(value);
-    if (!Number.isInteger(n) || n < MIN_IMPORTANCE || n > MAX_IMPORTANCE) {
-        throw new ValidationError(
-            `importance must be an integer between ${MIN_IMPORTANCE} and ${MAX_IMPORTANCE}`
         );
     }
 }
@@ -66,6 +51,24 @@ function assertDate(value, field) {
     }
 }
 
+// A colour is either the empty string ("none") or a #rrggbb / #rgb hex.
+function assertColor(value, field = 'color') {
+    if (value === undefined || value === null || value === '') return;
+    if (
+        typeof value !== 'string' ||
+        !/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value)
+    ) {
+        throw new ValidationError(`${field} must be a hex colour like #2f9e6b`);
+    }
+}
+
+function assertBoolean(value, field) {
+    if (value === undefined) return;
+    if (typeof value !== 'boolean') {
+        throw new ValidationError(`${field} must be a boolean`);
+    }
+}
+
 function assertParentType(value, allowed = PARENT_TYPES) {
     if (!allowed.includes(value)) {
         throw new ValidationError(
@@ -77,17 +80,15 @@ function assertParentType(value, allowed = PARENT_TYPES) {
 module.exports = {
     requireNonEmptyString,
     assertEnum,
-    assertImportance,
     assertPercent,
     assertNumber,
     assertDate,
+    assertColor,
+    assertBoolean,
     assertParentType,
-    GOAL_PROGRESS_MODES,
-    STRATEGY_PROGRESS_MODES,
-    PROJECT_PROGRESS_MODES,
     PARENT_TYPES,
     KEY_RESULT_PARENT_TYPES,
-    STRATEGY_KINDS,
+    MILESTONE_PARENT_TYPES,
     STRATEGY_STATUSES,
     KR_DIRECTIONS,
     KR_AUTO_SOURCES,

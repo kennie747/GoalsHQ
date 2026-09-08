@@ -99,16 +99,71 @@ const controller = {
         }
     },
 
+    async listAllStrategies(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const strategies = await service.listAllStrategies(userId);
+            res.json({ strategies });
+        } catch (err) {
+            next(err);
+        }
+    },
+
     async createStrategy(req, res, next) {
         try {
             ensureEnabled();
             const userId = requireUserId(req);
             const strategy = await service.createStrategy(
                 userId,
-                req.params.uid,
                 req.body || {}
             );
             res.status(201).json({ strategy });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    // POST /goalshq/goals/:uid/strategies — alias that pins the goal.
+    async createStrategyForGoal(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const strategy = await service.createStrategy(userId, {
+                ...(req.body || {}),
+                goal_uid: req.params.uid,
+            });
+            res.status(201).json({ strategy });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async setStrategyProjects(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const strategy = await service.setStrategyProjects(
+                userId,
+                req.params.uid,
+                req.body || {}
+            );
+            res.json({ strategy });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async setProjectStrategies(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const result = await service.setProjectStrategies(
+                userId,
+                req.params.uid,
+                req.body || {}
+            );
+            res.json(result);
         } catch (err) {
             next(err);
         }
@@ -175,22 +230,6 @@ const controller = {
                 userId,
                 req.params.uid,
                 projectUid
-            );
-            res.json({ strategy });
-        } catch (err) {
-            next(err);
-        }
-    },
-
-    async moveProjectLink(req, res, next) {
-        try {
-            ensureEnabled();
-            const userId = requireUserId(req);
-            const strategy = await service.moveProjectLink(
-                userId,
-                req.params.uid,
-                req.params.projectUid,
-                req.body || {}
             );
             res.json({ strategy });
         } catch (err) {
