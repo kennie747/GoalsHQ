@@ -40,19 +40,19 @@ describe('TaskAttachment Model', () => {
             expect(attachment.uid).toBeDefined();
         });
 
-        it('should require task_id', async () => {
-            const attachmentData = {
+        it('allows a task_id-less attachment (polymorphic parent, e.g. a record)', async () => {
+            const attachment = await TaskAttachment.create({
                 user_id: user.id,
-                original_filename: 'test.pdf',
-                stored_filename: 'task-12345.pdf',
+                parent_type: 'goalshq_record',
+                parent_id: 999,
+                original_filename: 'evidence.pdf',
+                stored_filename: 'att-12345.pdf',
                 file_size: 1024,
                 mime_type: 'application/pdf',
-                file_path: 'tasks/task-12345.pdf',
-            };
-
-            await expect(
-                TaskAttachment.create(attachmentData)
-            ).rejects.toThrow();
+                file_path: 'attachments/att-12345.pdf',
+            });
+            expect(attachment.task_id ?? null).toBeNull();
+            expect(attachment.parent_type).toBe('goalshq_record');
         });
 
         it('should require user_id', async () => {

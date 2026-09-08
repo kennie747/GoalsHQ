@@ -16,6 +16,12 @@ const ALLOWED_TYPES = {
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [
         '.docx',
     ],
+    'application/vnd.ms-powerpoint': ['.ppt'],
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        ['.pptx'],
+    'application/rtf': ['.rtf'],
+    'application/json': ['.json'],
+    'message/rfc822': ['.eml'],
     'text/plain': ['.txt'],
     'text/markdown': ['.md'],
     // Images
@@ -23,6 +29,8 @@ const ALLOWED_TYPES = {
     'image/jpeg': ['.jpg', '.jpeg'],
     'image/gif': ['.gif'],
     'image/webp': ['.webp'],
+    'image/tiff': ['.tif', '.tiff'],
+    'image/bmp': ['.bmp'],
     // Spreadsheets
     'application/vnd.ms-excel': ['.xls'],
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
@@ -32,6 +40,7 @@ const ALLOWED_TYPES = {
     // Archives
     'application/zip': ['.zip'],
     'application/x-zip-compressed': ['.zip'],
+    'application/x-7z-compressed': ['.7z'],
 };
 
 // Extensions safe to render inline in the browser (used by <img>/<iframe>
@@ -154,8 +163,8 @@ async function ensureUploadDir(dir) {
 /**
  * Get file URL for serving
  */
-function getFileUrl(storedFilename) {
-    return `/api/uploads/tasks/${storedFilename}`;
+function getFileUrl(storedFilename, subdir = 'tasks') {
+    return `/api/uploads/${subdir}/${storedFilename}`;
 }
 
 module.exports = {

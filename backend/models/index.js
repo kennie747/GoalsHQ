@@ -88,7 +88,9 @@ const ApiToken = require('./api_token')(sequelize);
 const Setting = require('./setting')(sequelize);
 const Notification = require('./notification')(sequelize);
 const RecurringCompletion = require('./recurringCompletion')(sequelize);
-const TaskAttachment = require('./task_attachment')(sequelize);
+const Attachment = require('./attachment')(sequelize);
+// Back-compat alias — task-only code still imports `TaskAttachment`.
+const TaskAttachment = Attachment;
 const Backup = require('./backup')(sequelize);
 const OIDCIdentity = require('./oidc_identity')(sequelize);
 const OIDCStateNonce = require('./oidc_state_nonce')(sequelize);
@@ -122,6 +124,12 @@ const GoalshqProgressSnapshot =
     require('../modules/goalshq/models/progressSnapshot')(sequelize);
 const GoalshqProjectSettings =
     require('../modules/goalshq/models/projectSettings')(sequelize);
+const GoalshqRecord = require('../modules/goalshq/models/record')(sequelize);
+const GoalshqKeyResultEntry =
+    require('../modules/goalshq/models/keyResultEntry')(sequelize);
+const GoalshqMilestoneTask = require('../modules/goalshq/models/milestoneTask')(
+    sequelize
+);
 
 User.hasMany(Area, { foreignKey: 'user_id' });
 Area.belongsTo(User, { foreignKey: 'user_id' });
@@ -435,7 +443,39 @@ for (const [Parent, parentType] of [
         as: 'ProgressSnapshots',
         constraints: false,
     });
+    Parent.hasMany(GoalshqRecord, {
+        foreignKey: 'parent_id',
+        scope: { parent_type: parentType },
+        as: 'Records',
+        constraints: false,
+    });
 }
+
+// KR check-in history + KR tree.
+GoalshqKeyResult.hasMany(GoalshqKeyResultEntry, {
+    foreignKey: 'key_result_id',
+    as: 'Entries',
+});
+GoalshqKeyResultEntry.belongsTo(GoalshqKeyResult, {
+    foreignKey: 'key_result_id',
+});
+GoalshqKeyResult.hasMany(GoalshqKeyResult, {
+    foreignKey: 'parent_kr_id',
+    as: 'ChildKeyResults',
+});
+GoalshqKeyResult.belongsTo(GoalshqKeyResult, {
+    foreignKey: 'parent_kr_id',
+    as: 'ParentKeyResult',
+});
+
+// Milestone ↔ task auto-achieve links.
+GoalshqMilestone.hasMany(GoalshqMilestoneTask, {
+    foreignKey: 'milestone_id',
+    as: 'TaskLinks',
+});
+GoalshqMilestoneTask.belongsTo(GoalshqMilestone, {
+    foreignKey: 'milestone_id',
+});
 
 // Task gets KeyResult only (the "batch/quota task" primitive) — not
 // Milestone (redundant with a task's own due_date/status) or ProgressSnapshot
@@ -581,7 +621,11 @@ module.exports = {
     Setting,
     Notification,
     RecurringCompletion,
+    Attachment,
     TaskAttachment,
+    GoalshqRecord,
+    GoalshqKeyResultEntry,
+    GoalshqMilestoneTask,
     Backup,
     OIDCIdentity,
     OIDCStateNonce,

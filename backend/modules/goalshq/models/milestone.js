@@ -61,6 +61,27 @@ module.exports = (sequelize) => {
                 type: DataTypes.DATE,
                 allowNull: true,
             },
+            // Auto-achieve: from linked task completion ('all' | 'any') and/or
+            // a Key Result crossing `auto_kr_threshold`. Manual status always
+            // wins; `auto_achieved` marks a flip that happened automatically.
+            completion_mode: {
+                type: DataTypes.STRING(10),
+                allowNull: false,
+                defaultValue: 'all',
+            },
+            auto_kr_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+            },
+            auto_kr_threshold: {
+                type: DataTypes.FLOAT,
+                allowNull: true,
+            },
+            auto_achieved: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false,
+            },
             sort_order: {
                 type: DataTypes.INTEGER,
                 allowNull: false,

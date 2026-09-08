@@ -59,10 +59,18 @@ module.exports = (sequelize) => {
             // recompute (see operations/rollup.js) — ignored for a
             // task-parented KR (informational only per Phase A Follow-up AF3,
             // never touched by recomputeGoal()).
+            // manual | tasks_done_count | record_sum | record_count |
+            // child_kr_sum (app-validated). A leaf KR has its own source; a
+            // 'child_kr_sum' KR is a rollup of its child KRs (parent_kr_id).
             auto_source: {
-                type: DataTypes.ENUM('manual', 'tasks_done_count'),
+                type: DataTypes.STRING(30),
                 allowNull: false,
                 defaultValue: 'manual',
+            },
+            // Self-reference for the KR tree (propagate downward).
+            parent_kr_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
             },
             baseline_value: {
                 type: DataTypes.FLOAT,
@@ -89,6 +97,7 @@ module.exports = (sequelize) => {
             indexes: [
                 { fields: ['parent_type', 'parent_id'] },
                 { fields: ['user_id'] },
+                { fields: ['parent_kr_id'] },
             ],
         }
     );
