@@ -24,6 +24,8 @@ interface Props {
     keyResults: KeyResult[];
     milestones: Milestone[];
     onChange: () => void;
+    /** values-only rendering (strategy with metrics_editable = false) */
+    readOnly?: boolean;
 }
 
 const inputCls =
@@ -35,6 +37,7 @@ const MetricsPanels: React.FC<Props> = ({
     keyResults,
     milestones,
     onChange,
+    readOnly = false,
 }) => {
     const { t } = useTranslation();
     const [krDraft, setKrDraft] = useState({
@@ -194,35 +197,37 @@ const MetricsPanels: React.FC<Props> = ({
                         </li>
                     )}
                 </ul>
-                <div className="flex flex-wrap items-center gap-2">
-                    <input
-                        placeholder={t('goalshq.krName', 'Metric name')}
-                        value={krDraft.name}
-                        onChange={(e) =>
-                            setKrDraft({ ...krDraft, name: e.target.value })
-                        }
-                        className={`${inputCls} flex-1`}
-                    />
-                    <input
-                        placeholder={t('goalshq.krTarget', 'Target')}
-                        type="number"
-                        value={krDraft.target_value}
-                        onChange={(e) =>
-                            setKrDraft({
-                                ...krDraft,
-                                target_value: e.target.value,
-                            })
-                        }
-                        className={`${inputCls} w-24`}
-                    />
-                    <button
-                        disabled={busy}
-                        onClick={addKr}
-                        className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-                    >
-                        {t('common.add', 'Add')}
-                    </button>
-                </div>
+                {!readOnly && (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <input
+                            placeholder={t('goalshq.krName', 'Metric name')}
+                            value={krDraft.name}
+                            onChange={(e) =>
+                                setKrDraft({ ...krDraft, name: e.target.value })
+                            }
+                            className={`${inputCls} flex-1`}
+                        />
+                        <input
+                            placeholder={t('goalshq.krTarget', 'Target')}
+                            type="number"
+                            value={krDraft.target_value}
+                            onChange={(e) =>
+                                setKrDraft({
+                                    ...krDraft,
+                                    target_value: e.target.value,
+                                })
+                            }
+                            className={`${inputCls} w-24`}
+                        />
+                        <button
+                            disabled={busy}
+                            onClick={addKr}
+                            className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            {t('common.add', 'Add')}
+                        </button>
+                    </div>
+                )}
             </section>
 
             {/* Milestones */}
@@ -293,34 +298,39 @@ const MetricsPanels: React.FC<Props> = ({
                         </li>
                     )}
                 </ul>
-                <div className="flex flex-wrap items-center gap-2">
-                    <input
-                        placeholder={t('goalshq.msTitle', 'Milestone')}
-                        value={msDraft.title}
-                        onChange={(e) =>
-                            setMsDraft({ ...msDraft, title: e.target.value })
-                        }
-                        className={`${inputCls} flex-1`}
-                    />
-                    <input
-                        type="date"
-                        value={msDraft.target_date}
-                        onChange={(e) =>
-                            setMsDraft({
-                                ...msDraft,
-                                target_date: e.target.value,
-                            })
-                        }
-                        className={`${inputCls}`}
-                    />
-                    <button
-                        disabled={busy}
-                        onClick={addMs}
-                        className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
-                    >
-                        {t('common.add', 'Add')}
-                    </button>
-                </div>
+                {!readOnly && (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <input
+                            placeholder={t('goalshq.msTitle', 'Milestone')}
+                            value={msDraft.title}
+                            onChange={(e) =>
+                                setMsDraft({
+                                    ...msDraft,
+                                    title: e.target.value,
+                                })
+                            }
+                            className={`${inputCls} flex-1`}
+                        />
+                        <input
+                            type="date"
+                            value={msDraft.target_date}
+                            onChange={(e) =>
+                                setMsDraft({
+                                    ...msDraft,
+                                    target_date: e.target.value,
+                                })
+                            }
+                            className={`${inputCls}`}
+                        />
+                        <button
+                            disabled={busy}
+                            onClick={addMs}
+                            className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                            {t('common.add', 'Add')}
+                        </button>
+                    </div>
+                )}
             </section>
         </div>
     );

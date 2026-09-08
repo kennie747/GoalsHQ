@@ -40,8 +40,10 @@ function makeGoalSummary(overrides: Partial<GoalSummary> = {}): GoalSummary {
         color: null,
         area: null,
         settings: null,
-        percent: 40,
-        health: 'at_risk',
+        execution_percent: 40,
+        execution_health: 'at_risk',
+        outcome_percent: null,
+        outcome_health: 'no_data',
         projects_count: 0,
         tasks_count: 0,
         strategies: [],
@@ -52,8 +54,8 @@ function makeGoalSummary(overrides: Partial<GoalSummary> = {}): GoalSummary {
 describe('buildGoalHealthMap', () => {
     it('maps goal uid to health', () => {
         const map = buildGoalHealthMap([
-            makeGoalSummary({ uid: 'a', health: 'on_track' }),
-            makeGoalSummary({ uid: 'b', health: 'off_track' }),
+            makeGoalSummary({ uid: 'a', execution_health: 'on_track' }),
+            makeGoalSummary({ uid: 'b', execution_health: 'off_track' }),
         ]);
         expect(map.get('a')).toBe('on_track');
         expect(map.get('b')).toBe('off_track');
@@ -75,7 +77,7 @@ describe('scoreCandidate — goal health awareness', () => {
     it('upgrades to "goal_at_risk" with a bigger bonus when the goal is at_risk', () => {
         const task = makeTask();
         const healthMap = buildGoalHealthMap([
-            makeGoalSummary({ uid: 'goal-uid', health: 'at_risk' }),
+            makeGoalSummary({ uid: 'goal-uid', execution_health: 'at_risk' }),
         ]);
         const plain = scoreCandidate(task, [project], [], {}, new Map());
         const atRisk = scoreCandidate(task, [project], [], {}, healthMap);
@@ -89,7 +91,7 @@ describe('scoreCandidate — goal health awareness', () => {
     it('also upgrades for off_track goals', () => {
         const task = makeTask();
         const healthMap = buildGoalHealthMap([
-            makeGoalSummary({ uid: 'goal-uid', health: 'off_track' }),
+            makeGoalSummary({ uid: 'goal-uid', execution_health: 'off_track' }),
         ]);
         const meta = scoreCandidate(task, [project], [], {}, healthMap);
         expect(meta.reason).toBe('goal_at_risk');
@@ -98,7 +100,7 @@ describe('scoreCandidate — goal health awareness', () => {
     it('does not upgrade for on_track goals', () => {
         const task = makeTask();
         const healthMap = buildGoalHealthMap([
-            makeGoalSummary({ uid: 'goal-uid', health: 'on_track' }),
+            makeGoalSummary({ uid: 'goal-uid', execution_health: 'on_track' }),
         ]);
         const meta = scoreCandidate(task, [project], [], {}, healthMap);
         expect(meta.reason).toBe('goal');
@@ -108,7 +110,7 @@ describe('scoreCandidate — goal health awareness', () => {
         const today = new Date().toISOString();
         const task = makeTask({ due_date: today });
         const healthMap = buildGoalHealthMap([
-            makeGoalSummary({ uid: 'goal-uid', health: 'off_track' }),
+            makeGoalSummary({ uid: 'goal-uid', execution_health: 'off_track' }),
         ]);
         const meta = scoreCandidate(task, [project], [], {}, healthMap);
         expect(meta.reason).toBe('due');
@@ -123,13 +125,11 @@ describe('buildProjectStrategyMap', () => {
                 {
                     uid: 'strat-1',
                     name: 'Direct Outreach',
-                    kind: 'primary',
+                    color: null,
                     status: 'active',
-                    importance: 3,
-                    percent: 20,
-                    health: 'at_risk',
+                    summary: { percent: 20, health: 'at_risk' },
                     project_uids: ['proj-5'],
-                projects: [],
+                    projects: [],
                 },
             ],
         });
@@ -148,24 +148,20 @@ describe('buildProjectStrategyMap', () => {
                 {
                     uid: 'healthy-strat',
                     name: 'Healthy Strategy',
-                    kind: 'secondary',
+                    color: null,
                     status: 'active',
-                    importance: 2,
-                    percent: 80,
-                    health: 'on_track',
+                    summary: { percent: 80, health: 'on_track' },
                     project_uids: ['proj-5'],
-                projects: [],
+                    projects: [],
                 },
                 {
                     uid: 'risky-strat',
                     name: 'Risky Strategy',
-                    kind: 'primary',
+                    color: null,
                     status: 'active',
-                    importance: 5,
-                    percent: 10,
-                    health: 'off_track',
+                    summary: { percent: 20, health: 'at_risk' },
                     project_uids: ['proj-5'],
-                projects: [],
+                    projects: [],
                 },
             ],
         });
@@ -182,12 +178,16 @@ describe('scoreCandidate — strategy attribution takes priority over goal', () 
     it('attributes to the strategy, not the goal, when the project is strategy-linked', () => {
         const task = makeTask();
         const goalHealthByUid = buildGoalHealthMap([
-            makeGoalSummary({ uid: 'goal-uid', health: 'on_track' }),
+            makeGoalSummary({ uid: 'goal-uid', execution_health: 'on_track' }),
         ]);
         const strategyByProjectId = new Map([
             [
                 1,
-                { uid: 'strat-1', name: 'Direct Outreach', health: 'at_risk' as const },
+                {
+                    uid: 'strat-1',
+                    name: 'Direct Outreach',
+                    health: 'at_risk' as const,
+                },
             ],
         ]);
         const meta = scoreCandidate(
@@ -206,7 +206,7 @@ describe('scoreCandidate — strategy attribution takes priority over goal', () 
     it('falls back to goal attribution for a project with no strategy link', () => {
         const task = makeTask();
         const goalHealthByUid = buildGoalHealthMap([
-            makeGoalSummary({ uid: 'goal-uid', health: 'at_risk' }),
+            makeGoalSummary({ uid: 'goal-uid', execution_health: 'at_risk' }),
         ]);
         const meta = scoreCandidate(
             task,
@@ -232,7 +232,7 @@ describe('scoreCandidate — a task linked directly to a Goal with no project', 
                 uid: 'goal-uid',
                 title: 'Make the first million',
                 status: 'active',
-                health: 'off_track',
+                execution_health: 'off_track',
             }),
         ]);
 
@@ -251,12 +251,15 @@ describe('scoreCandidate — a task linked directly to a Goal with no project', 
     });
 
     it('does nothing when the goal is not active', () => {
-        const task = makeTask({ project_id: null, goal_uid: 'goal-uid' } as any);
+        const task = makeTask({
+            project_id: null,
+            goal_uid: 'goal-uid',
+        } as any);
         const goalInfoByUid = buildGoalInfoMap([
             makeGoalSummary({
                 uid: 'goal-uid',
                 status: 'achieved',
-                health: 'off_track',
+                execution_health: 'off_track',
             }),
         ]);
 
@@ -276,7 +279,15 @@ describe('scoreCandidate — a task linked directly to a Goal with no project', 
 
     it('does nothing when there is no matching goal info', () => {
         const task = makeTask({ project_id: null, goal_uid: 'missing' } as any);
-        const meta = scoreCandidate(task, [], [], {}, new Map(), new Map(), new Map());
+        const meta = scoreCandidate(
+            task,
+            [],
+            [],
+            {},
+            new Map(),
+            new Map(),
+            new Map()
+        );
         expect(meta.reason).not.toBe('goal_at_risk');
         expect(meta.reason).not.toBe('goal');
     });

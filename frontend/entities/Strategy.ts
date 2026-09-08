@@ -1,53 +1,63 @@
-import { GoalProgressMode, GoalshqHealth } from './GoalSettings';
+import { GoalshqHealth } from './GoalSettings';
 import { KeyResult } from './KeyResult';
 import { Milestone } from './Milestone';
 import { ProgressSnapshot } from './ProgressSnapshot';
-import { ProjectRef } from './Project';
 
-export type StrategyProgressMode = Exclude<
-    GoalProgressMode,
-    'rollup_strategies'
->;
-
-export type StrategyKind = 'primary' | 'secondary' | 'experiment';
 export type StrategyStatus = 'active' | 'paused' | 'achieved' | 'dropped';
+
+/** A project linked to a strategy, with its own execution %. */
+export interface StrategyProjectRef {
+    uid: string;
+    name: string;
+    status: string;
+    priority: number | string | null;
+    color: string | null;
+    execution_percent: number | null;
+    metrics_enabled?: boolean;
+    outcome_percent?: number | null;
+}
+
+export interface StrategyProjectCounts {
+    total: number;
+    [status: string]: number;
+}
+
+/** The grouping summary = plain average of the linked projects' execution %. */
+export interface StrategySummary {
+    percent: number | null;
+    health: GoalshqHealth;
+    source: string;
+    computed_at?: string | null;
+}
 
 export interface Strategy {
     uid: string;
     name: string;
     description: string | null;
-    kind: StrategyKind;
+    color: string | null;
     status: StrategyStatus;
-    horizon_label: string | null;
-    start_date: string | null;
-    target_date: string | null;
-    importance: number;
-    progress_mode: StrategyProgressMode;
-    weight_by_priority: boolean;
-    manual_percent: number | null;
+    metrics_editable: boolean;
     sort_order: number;
-    percent: number | null;
-    health: GoalshqHealth;
-    computed_at: string | null;
+    goal: { uid: string; title: string } | null;
+    summary: StrategySummary;
+    projects: StrategyProjectRef[];
+    project_counts: StrategyProjectCounts | null;
+    key_results: KeyResult[];
+    milestones: Milestone[];
+    trend: ProgressSnapshot[];
     created_at?: string;
     updated_at?: string;
-    projects?: ProjectRef[];
-    key_results?: KeyResult[];
-    milestones?: Milestone[];
-    trend?: ProgressSnapshot[];
 }
 
 /** Slim strategy shape embedded inside a GoalSummary. */
 export interface GoalStrategySummary {
     uid: string;
     name: string;
-    kind: StrategyKind;
+    color: string | null;
     status: StrategyStatus;
-    importance: number;
-    percent: number | null;
-    health: GoalshqHealth;
-    /** uids of projects linked to this strategy — powers Strategy-level (not just Goal-level) attribution. */
+    summary: { percent: number | null; health: GoalshqHealth };
+    /** uids of projects linked to this strategy. */
     project_uids: string[];
-    /** name+uid pairs for the same projects, so the Strategy overview can link to them by name. */
+    /** name+uid pairs, so the overview can link to them by name. */
     projects: { uid: string; name: string }[];
 }

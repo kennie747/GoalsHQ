@@ -1,6 +1,6 @@
 import { Area } from './Area';
 import { Task } from './Task';
-import { Project, ProjectRef } from './Project';
+import { Project } from './Project';
 import { GoalSettings, GoalshqHealth } from './GoalSettings';
 import { GoalStrategySummary, Strategy } from './Strategy';
 import { KeyResult } from './KeyResult';
@@ -39,8 +39,10 @@ export interface GoalSummary {
     color: string | null;
     area: { uid: string; name: string; color: string | null } | null;
     settings: GoalSettings | null;
-    percent: number | null;
-    health: GoalshqHealth;
+    execution_percent: number | null;
+    execution_health: GoalshqHealth;
+    outcome_percent: number | null;
+    outcome_health: GoalshqHealth;
     /** Distinct projects associated with this goal, directly or via any of its strategies. */
     projects_count: number;
     /** Tasks (including subtasks) attached directly to the goal or to any of its associated projects. */
@@ -48,7 +50,18 @@ export interface GoalSummary {
     strategies: GoalStrategySummary[];
 }
 
-/** GoalsHQ goal detail page — settings, strategies, and direct-bucket projects. */
+export interface GoalProjectRef {
+    uid: string;
+    name: string;
+    status: string;
+    priority: number | string | null;
+    color: string | null;
+    execution_percent: number | null;
+    metrics_enabled?: boolean;
+    outcome_percent?: number | null;
+}
+
+/** GoalsHQ goal detail page — settings, strategies (grouping), and projects. */
 export interface GoalDetail {
     uid: string;
     title: string;
@@ -58,11 +71,13 @@ export interface GoalDetail {
     target_date: string | null;
     color: string | null;
     settings: GoalSettings;
-    percent: number | null;
-    health: GoalshqHealth;
+    execution_percent: number | null;
+    execution_health: GoalshqHealth;
+    outcome_percent: number | null;
+    outcome_health: GoalshqHealth;
     strategies: Strategy[];
     key_results: KeyResult[];
     milestones: Milestone[];
-    direct_projects: ProjectRef[];
+    projects: GoalProjectRef[];
     trend: ProgressSnapshot[];
 }

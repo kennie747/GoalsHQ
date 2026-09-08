@@ -49,54 +49,61 @@ export const updateGoalSettings = async (
 
 export const recomputeGoal = async (uid: string): Promise<GoalDetail> => {
     const token = await getCsrfToken();
-    const response = await fetch(
-        getApiPath(`goalshq/goals/${uid}/recompute`),
-        {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                'x-csrf-token': token,
-            },
-        }
-    );
+    const response = await fetch(getApiPath(`goalshq/goals/${uid}/recompute`), {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-csrf-token': token,
+        },
+    });
     await handleAuthResponse(response, 'Failed to recompute goal.');
     const data = await response.json();
     return data.goal;
 };
 
-export const fetchStrategies = async (goalUid: string): Promise<Strategy[]> => {
-    const response = await fetch(
-        getApiPath(`goalshq/goals/${goalUid}/strategies`),
-        {
-            credentials: 'include',
-            headers: { Accept: 'application/json' },
-        }
-    );
+export const fetchStrategies = async (
+    goalUid?: string
+): Promise<Strategy[]> => {
+    const path = goalUid
+        ? `goalshq/goals/${goalUid}/strategies`
+        : 'goalshq/strategies';
+    const response = await fetch(getApiPath(path), {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+    });
     await handleAuthResponse(response, 'Failed to load strategies.');
     const data = await response.json();
     return data.strategies;
 };
 
+export interface StrategyInput {
+    name?: string;
+    description?: string | null;
+    color?: string | null;
+    status?: string;
+    metrics_editable?: boolean;
+    /** null clears the goal ("No Goal"); undefined leaves it unchanged. */
+    goal_uid?: string | null;
+    project_uids?: string[];
+    sort_order?: number;
+}
+
 export const createStrategy = async (
-    goalUid: string,
-    strategyData: Partial<Strategy>
+    strategyData: StrategyInput
 ): Promise<Strategy> => {
     const token = await getCsrfToken();
-    const response = await fetch(
-        getApiPath(`goalshq/goals/${goalUid}/strategies`),
-        {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                'x-csrf-token': token,
-            },
-            body: JSON.stringify(strategyData),
-        }
-    );
+    const response = await fetch(getApiPath('goalshq/strategies'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-csrf-token': token,
+        },
+        body: JSON.stringify(strategyData),
+    });
     await handleAuthResponse(response, 'Failed to create strategy.');
     const data = await response.json();
     return data.strategy;
@@ -114,7 +121,7 @@ export const fetchStrategy = async (uid: string): Promise<Strategy> => {
 
 export const updateStrategy = async (
     uid: string,
-    strategyData: Partial<Strategy>
+    strategyData: StrategyInput
 ): Promise<Strategy> => {
     const token = await getCsrfToken();
     const response = await fetch(getApiPath(`goalshq/strategies/${uid}`), {
@@ -147,8 +154,7 @@ export const deleteStrategy = async (uid: string): Promise<void> => {
 
 export const linkProject = async (
     strategyUid: string,
-    projectUid: string,
-    weight?: number
+    projectUid: string
 ): Promise<Strategy> => {
     const token = await getCsrfToken();
     const response = await fetch(
@@ -161,12 +167,58 @@ export const linkProject = async (
                 Accept: 'application/json',
                 'x-csrf-token': token,
             },
-            body: JSON.stringify({ project_uid: projectUid, weight }),
+            body: JSON.stringify({ project_uid: projectUid }),
         }
     );
     await handleAuthResponse(response, 'Failed to link project.');
     const data = await response.json();
     return data.strategy;
+};
+
+/** Replace a strategy's whole project set (checkbox multi-select). */
+export const setStrategyProjects = async (
+    strategyUid: string,
+    projectUids: string[]
+): Promise<Strategy> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/strategies/${strategyUid}/projects`),
+        {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+            body: JSON.stringify({ project_uids: projectUids }),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to update strategy projects.');
+    const data = await response.json();
+    return data.strategy;
+};
+
+/** Replace a project's whole strategy set (from the Project modal). */
+export const setProjectStrategies = async (
+    projectUid: string,
+    strategyUids: string[]
+): Promise<void> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/projects/${projectUid}/strategies`),
+        {
+            method: 'PUT',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+            body: JSON.stringify({ strategy_uids: strategyUids }),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to update project strategies.');
 };
 
 export const unlinkProject = async (
@@ -347,7 +399,10 @@ export const expandMilestone = async (uid: string): Promise<ExpandedTask> => {
             },
         }
     );
-    await handleAuthResponse(response, 'Failed to expand milestone into a task.');
+    await handleAuthResponse(
+        response,
+        'Failed to expand milestone into a task.'
+    );
     const data = await response.json();
     return data.task;
 };

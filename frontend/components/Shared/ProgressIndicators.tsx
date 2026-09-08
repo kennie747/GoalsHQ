@@ -101,6 +101,82 @@ export const ImportanceStars: React.FC<{
     </span>
 );
 
+/**
+ * Execution and Outcome shown side by side — never blended. The Outcome column
+ * is hidden entirely unless `metricsEnabled`.
+ */
+export const DualProgress: React.FC<{
+    executionPercent: number | null;
+    executionHealth: GoalshqHealth;
+    outcomePercent: number | null;
+    outcomeHealth: GoalshqHealth;
+    metricsEnabled: boolean;
+    executionNote?: string;
+    outcomeNote?: string;
+    executionTrend?: ProgressSnapshot[];
+    outcomeTrend?: ProgressSnapshot[];
+}> = ({
+    executionPercent,
+    executionHealth,
+    outcomePercent,
+    outcomeHealth,
+    metricsEnabled,
+    executionNote,
+    outcomeNote,
+    executionTrend,
+    outcomeTrend,
+}) => {
+    const { t } = useTranslation();
+    const Col: React.FC<{
+        label: string;
+        percent: number | null;
+        health: GoalshqHealth;
+        note?: string;
+        trend?: ProgressSnapshot[];
+    }> = ({ label, percent, health, note, trend }) => (
+        <div className="flex-1 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                {label}
+            </div>
+            <div className="mb-1 flex items-center gap-2">
+                <ProgressBar percent={percent} health={health} />
+                <PercentLabel percent={percent} />
+            </div>
+            <div className="flex items-center gap-2">
+                <HealthChip health={health} />
+                {trend && trend.length > 1 && (
+                    <TrendSparkline points={trend} width={90} height={22} />
+                )}
+            </div>
+            {note && (
+                <div className="mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+                    {note}
+                </div>
+            )}
+        </div>
+    );
+    return (
+        <div className="flex flex-col gap-3 sm:flex-row">
+            <Col
+                label={t('goalshq.execution', 'Execution')}
+                percent={executionPercent}
+                health={executionHealth}
+                note={executionNote}
+                trend={executionTrend}
+            />
+            {metricsEnabled && (
+                <Col
+                    label={t('goalshq.outcome', 'Outcome')}
+                    percent={outcomePercent}
+                    health={outcomeHealth}
+                    note={outcomeNote}
+                    trend={outcomeTrend}
+                />
+            )}
+        </div>
+    );
+};
+
 export const TrendSparkline: React.FC<{
     points: ProgressSnapshot[];
     width?: number;

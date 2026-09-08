@@ -7,17 +7,29 @@ import {
     FlagIcon,
     XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { Goal, GoalHorizon, GoalStatus, GoalDetail as GoalHqDetail } from '../../entities/Goal';
-import { GoalProgressMode } from '../../entities/GoalSettings';
+import {
+    Goal,
+    GoalHorizon,
+    GoalStatus,
+    GoalDetail as GoalHqDetail,
+} from '../../entities/Goal';
 import { Task } from '../../entities/Task';
 import { Project } from '../../entities/Project';
-import { fetchGoalByUid, createGoal, updateGoal, deleteGoal } from '../../utils/goalsService';
+import {
+    fetchGoalByUid,
+    createGoal,
+    updateGoal,
+    deleteGoal,
+} from '../../utils/goalsService';
 import {
     fetchGoalshqGoal,
     updateGoalSettings,
-    createStrategy,
 } from '../../utils/goalsHqService';
-import { extractUidFromSlug, createProjectUrl, createStrategyUrl } from '../../utils/slugUtils';
+import {
+    extractUidFromSlug,
+    createProjectUrl,
+    createStrategyUrl,
+} from '../../utils/slugUtils';
 import ConfirmDialog from '../Shared/ConfirmDialog';
 import TaskList from '../Task/TaskList';
 import { useStore } from '../../store/useStore';
@@ -27,19 +39,10 @@ import {
     ProgressBar,
     HealthChip,
     PercentLabel,
-    ImportanceStars,
-    TrendSparkline,
+    DualProgress,
 } from '../Shared/ProgressIndicators';
 import MetricsPanels from '../Strategy/MetricsPanels';
-
-const GOAL_PROGRESS_MODES: GoalProgressMode[] = [
-    'rollup_strategies',
-    'rollup_projects',
-    'rollup_tasks',
-    'metric',
-    'milestones',
-    'manual',
-];
+import StrategyModal from '../Strategy/StrategyModal';
 
 const TASK_STATUS_DONE = [2, 3, 'done', 'archived'];
 
@@ -61,29 +64,34 @@ const GoalDetails: React.FC = () => {
     const { showSuccessToast, showErrorToast } = useToast();
 
     const isNew = uidSlug === 'new';
-    const prefilledAreaId = isNew ? ((location.state as any)?.area_id ?? null) : null;
+    const prefilledAreaId = isNew
+        ? ((location.state as any)?.area_id ?? null)
+        : null;
 
     const [goal, setGoal] = useState<Goal | null>(null);
     const [loading, setLoading] = useState(!isNew);
     const [error, setError] = useState<string | null>(null);
     const [isEditing, setIsEditing] = useState(isNew);
     const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
-    const [formData, setFormData] = useState<Partial<Goal>>({ ...defaultFormData(), area_id: prefilledAreaId });
+    const [formData, setFormData] = useState<Partial<Goal>>({
+        ...defaultFormData(),
+        area_id: prefilledAreaId,
+    });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
 
     const loadGoals = useStore((state: any) => state.goalsStore.loadGoals);
     const areas = useStore((state: any) => state.areasStore.areas);
-    const projects: Project[] = useStore((state: any) => state.projectsStore.projects);
+    const projects: Project[] = useStore(
+        (state: any) => state.projectsStore.projects
+    );
     const goalshqEnabled = useStore(
         (state) => state.userSettingsStore.goalshqEnabled
     );
 
     const [goalHq, setGoalHq] = useState<GoalHqDetail | null>(null);
     const [goalHqError, setGoalHqError] = useState(false);
-    const [newStrategy, setNewStrategy] = useState('');
-    const [showInactiveStrategies, setShowInactiveStrategies] =
-        useState(false);
+    const [strategyModalOpen, setStrategyModalOpen] = useState(false);
 
     const loadGoalHq = React.useCallback(async (goalUid: string) => {
         try {
@@ -99,20 +107,9 @@ const GoalDetails: React.FC = () => {
         loadGoalHq(goal.uid);
     }, [goalshqEnabled, goal?.uid, loadGoalHq]);
 
-    const setGoalProgressMode = async (mode: GoalProgressMode) => {
+    const toggleOutcomeMetrics = async (enabled: boolean) => {
         if (!goal?.uid) return;
-        await updateGoalSettings(goal.uid, { progress_mode: mode });
-        loadGoalHq(goal.uid);
-    };
-    const setGoalImportance = async (value: number) => {
-        if (!goal?.uid) return;
-        await updateGoalSettings(goal.uid, { importance: value });
-        loadGoalHq(goal.uid);
-    };
-    const addStrategy = async () => {
-        if (!goal?.uid || !newStrategy.trim()) return;
-        await createStrategy(goal.uid, { name: newStrategy.trim() });
-        setNewStrategy('');
+        await updateGoalSettings(goal.uid, { metrics_enabled: enabled });
         loadGoalHq(goal.uid);
     };
 
@@ -120,7 +117,11 @@ const GoalDetails: React.FC = () => {
         if (isNew) return;
 
         const uid = extractUidFromSlug(uidSlug ?? '');
-        if (!uid) { setError(t('goals.notFound', 'Goal not found')); setLoading(false); return; }
+        if (!uid) {
+            setError(t('goals.notFound', 'Goal not found'));
+            setLoading(false);
+            return;
+        }
 
         fetchGoalByUid(uid)
             .then((data) => {
@@ -135,23 +136,34 @@ const GoalDetails: React.FC = () => {
                     color: data.color ?? '',
                 });
             })
-            .catch((err) => setError(err?.message || t('goals.notFound', 'Goal not found')))
+            .catch((err) =>
+                setError(err?.message || t('goals.notFound', 'Goal not found'))
+            )
             .finally(() => setLoading(false));
     }, [uidSlug, t, isNew]);
 
     const handleChange = (
-        e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+        e: React.ChangeEvent<
+            HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+        >
     ) => {
         const { name, value } = e.target;
         setFormData((prev) => ({
             ...prev,
-            [name]: name === 'area_id' ? (value ? parseInt(value, 10) : null) : value,
+            [name]:
+                name === 'area_id'
+                    ? value
+                        ? parseInt(value, 10)
+                        : null
+                    : value,
         }));
     };
 
     const handleSubmit = async () => {
         if (!formData.title?.trim()) {
-            setFormError(t('errors.goalTitleRequired', 'Goal title is required'));
+            setFormError(
+                t('errors.goalTitleRequired', 'Goal title is required')
+            );
             return;
         }
         setIsSubmitting(true);
@@ -165,20 +177,32 @@ const GoalDetails: React.FC = () => {
             if (isNew) {
                 const result = await createGoal(payload as any);
                 const current = useStore.getState().goalsStore.goals;
-                useStore.getState().goalsStore.setGoals([...current, result.goal]);
+                useStore
+                    .getState()
+                    .goalsStore.setGoals([...current, result.goal]);
                 showSuccessToast(t('success.goalCreated', 'Goal created!'));
                 const { createGoalUrl } = await import('../../utils/slugUtils');
-                navigate(createGoalUrl({ uid: result.goal.uid!, title: result.goal.title }), { replace: true });
+                navigate(
+                    createGoalUrl({
+                        uid: result.goal.uid!,
+                        title: result.goal.title,
+                    }),
+                    { replace: true }
+                );
             } else {
                 const result = await updateGoal(goal!.uid!, payload);
-                setGoal((prev) => prev ? { ...prev, ...result.goal } : result.goal);
+                setGoal((prev) =>
+                    prev ? { ...prev, ...result.goal } : result.goal
+                );
                 setIsEditing(false);
                 loadGoals(true);
                 showSuccessToast(t('success.goalUpdated', 'Goal updated!'));
             }
         } catch (err) {
             setFormError((err as Error).message);
-            showErrorToast(t('errors.failedToSaveGoal', 'Failed to save goal.'));
+            showErrorToast(
+                t('errors.failedToSaveGoal', 'Failed to save goal.')
+            );
         } finally {
             setIsSubmitting(false);
         }
@@ -212,7 +236,9 @@ const GoalDetails: React.FC = () => {
             showSuccessToast(t('success.goalDeleted', 'Goal deleted!'));
             navigate('/goals');
         } catch {
-            showErrorToast(t('errors.failedToDeleteGoal', 'Failed to delete goal.'));
+            showErrorToast(
+                t('errors.failedToDeleteGoal', 'Failed to delete goal.')
+            );
         }
         setIsConfirmDeleteOpen(false);
     };
@@ -223,7 +249,9 @@ const GoalDetails: React.FC = () => {
             return {
                 ...prev,
                 Tasks: (prev.Tasks ?? []).map((t: any) =>
-                    (t.uid ?? t.id) === (updatedTask.uid ?? updatedTask.id) ? updatedTask : t
+                    (t.uid ?? t.id) === (updatedTask.uid ?? updatedTask.id)
+                        ? updatedTask
+                        : t
                 ),
             };
         });
@@ -248,13 +276,21 @@ const GoalDetails: React.FC = () => {
     }
 
     if (error || (!isNew && !goal)) {
-        return <div className="text-red-500 p-4">{error ?? t('goals.notFound', 'Goal not found')}</div>;
+        return (
+            <div className="text-red-500 p-4">
+                {error ?? t('goals.notFound', 'Goal not found')}
+            </div>
+        );
     }
 
     const tasks: Task[] = (goal?.Tasks ?? []) as Task[];
     const goalProjects: Project[] = (goal?.Projects ?? []) as Project[];
-    const activeTasks = tasks.filter((t) => !TASK_STATUS_DONE.includes(t.status as any));
-    const completedTasks = tasks.filter((t) => TASK_STATUS_DONE.includes(t.status as any));
+    const activeTasks = tasks.filter(
+        (t) => !TASK_STATUS_DONE.includes(t.status as any)
+    );
+    const completedTasks = tasks.filter((t) =>
+        TASK_STATUS_DONE.includes(t.status as any)
+    );
 
     const effectiveColor = goal?.color || goal?.Area?.color;
     const hasColor = !!effectiveColor;
@@ -265,16 +301,24 @@ const GoalDetails: React.FC = () => {
             {/* Header banner */}
             <div
                 className="rounded-xl mb-8 overflow-hidden"
-                style={hasColor && !showForm ? { backgroundColor: effectiveColor } : undefined}
+                style={
+                    hasColor && !showForm
+                        ? { backgroundColor: effectiveColor }
+                        : undefined
+                }
             >
-                <div className={`p-6 ${(!hasColor || showForm) ? 'bg-gray-50 dark:bg-gray-900 rounded-xl' : ''}`}>
+                <div
+                    className={`p-6 ${!hasColor || showForm ? 'bg-gray-50 dark:bg-gray-900 rounded-xl' : ''}`}
+                >
                     {showForm ? (
                         /* Edit / Create form inline */
                         <div className="flex flex-col gap-4">
                             <div className="flex items-center gap-2 mb-1">
                                 <FlagIcon className="h-4 w-4 text-blue-500" />
                                 <p className="text-xs font-medium uppercase tracking-widest text-gray-400 dark:text-gray-500">
-                                    {isNew ? t('goals.newGoal', 'New Goal') : t('goals.editGoal', 'Edit Goal')}
+                                    {isNew
+                                        ? t('goals.newGoal', 'New Goal')
+                                        : t('goals.editGoal', 'Edit Goal')}
                                 </p>
                             </div>
 
@@ -285,7 +329,10 @@ const GoalDetails: React.FC = () => {
                                 value={formData.title ?? ''}
                                 onChange={handleChange}
                                 className="w-full text-3xl font-light bg-transparent text-gray-900 dark:text-gray-100 border-b border-gray-300 dark:border-gray-600 focus:outline-none focus:border-blue-500 pb-1"
-                                placeholder={t('forms.goalTitlePlaceholder', 'Goal title')}
+                                placeholder={t(
+                                    'forms.goalTitlePlaceholder',
+                                    'Goal title'
+                                )}
                             />
 
                             <div>
@@ -298,7 +345,10 @@ const GoalDetails: React.FC = () => {
                                     onChange={handleChange}
                                     rows={3}
                                     className="block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 resize-none"
-                                    placeholder={t('forms.goalWhyPlaceholder', 'What will achieving this enable?')}
+                                    placeholder={t(
+                                        'forms.goalWhyPlaceholder',
+                                        'What will achieving this enable?'
+                                    )}
                                 />
                             </div>
 
@@ -313,8 +363,15 @@ const GoalDetails: React.FC = () => {
                                         onChange={handleChange}
                                         className="block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
                                     >
-                                        <option value="season">{t('goals.horizon.season', 'Season')}</option>
-                                        <option value="year">{t('goals.horizon.year', 'Year')}</option>
+                                        <option value="season">
+                                            {t(
+                                                'goals.horizon.season',
+                                                'Season'
+                                            )}
+                                        </option>
+                                        <option value="year">
+                                            {t('goals.horizon.year', 'Year')}
+                                        </option>
                                     </select>
                                 </div>
                                 <div>
@@ -327,10 +384,24 @@ const GoalDetails: React.FC = () => {
                                         onChange={handleChange}
                                         className="block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
                                     >
-                                        <option value="active">{t('goals.status.active', 'Active')}</option>
-                                        <option value="achieved">{t('goals.status.achieved', 'Achieved')}</option>
-                                        <option value="paused">{t('goals.status.paused', 'Paused')}</option>
-                                        <option value="dropped">{t('goals.status.dropped', 'Dropped')}</option>
+                                        <option value="active">
+                                            {t('goals.status.active', 'Active')}
+                                        </option>
+                                        <option value="achieved">
+                                            {t(
+                                                'goals.status.achieved',
+                                                'Achieved'
+                                            )}
+                                        </option>
+                                        <option value="paused">
+                                            {t('goals.status.paused', 'Paused')}
+                                        </option>
+                                        <option value="dropped">
+                                            {t(
+                                                'goals.status.dropped',
+                                                'Dropped'
+                                            )}
+                                        </option>
                                     </select>
                                 </div>
                             </div>
@@ -355,14 +426,18 @@ const GoalDetails: React.FC = () => {
                                 <ColorPicker
                                     value={formData.color || ''}
                                     onChange={(color) =>
-                                        setFormData((prev) => ({ ...prev, color: color || '' }))
+                                        setFormData((prev) => ({
+                                            ...prev,
+                                            color: color || '',
+                                        }))
                                     }
                                 />
                             </div>
 
                             <div>
                                 <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wider">
-                                    {t('forms.goalArea', 'Area')} ({t('common.optional', 'optional')})
+                                    {t('forms.goalArea', 'Area')} (
+                                    {t('common.optional', 'optional')})
                                 </label>
                                 <select
                                     name="area_id"
@@ -370,7 +445,9 @@ const GoalDetails: React.FC = () => {
                                     onChange={handleChange}
                                     className="block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500"
                                 >
-                                    <option value="">{t('forms.noArea', 'No area')}</option>
+                                    <option value="">
+                                        {t('forms.noArea', 'No area')}
+                                    </option>
                                     {areas.map((area: any) => (
                                         <option key={area.id} value={area.id}>
                                             {area.name}
@@ -380,7 +457,9 @@ const GoalDetails: React.FC = () => {
                             </div>
 
                             {formError && (
-                                <div className="text-red-500 text-sm">{formError}</div>
+                                <div className="text-red-500 text-sm">
+                                    {formError}
+                                </div>
                             )}
 
                             <div className="flex items-center gap-3 pt-2">
@@ -392,8 +471,14 @@ const GoalDetails: React.FC = () => {
                                     {isSubmitting
                                         ? t('modals.submitting', 'Saving...')
                                         : isNew
-                                            ? t('modals.createGoal', 'Create Goal')
-                                            : t('modals.updateGoal', 'Update Goal')}
+                                          ? t(
+                                                'modals.createGoal',
+                                                'Create Goal'
+                                            )
+                                          : t(
+                                                'modals.updateGoal',
+                                                'Update Goal'
+                                            )}
                                 </button>
                                 <button
                                     onClick={handleCancelEdit}
@@ -413,46 +498,101 @@ const GoalDetails: React.FC = () => {
                                     {goal!.Area ? (
                                         <>
                                             <Link
-                                                to={`/area/${goal!.Area.uid}-${goal!.Area.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`}
+                                                to={`/area/${goal!.Area.uid}-${goal!.Area.name
+                                                    .toLowerCase()
+                                                    .replace(/[^a-z0-9]+/g, '-')
+                                                    .replace(/^-|-$/g, '')}`}
                                                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium transition-opacity hover:opacity-80 ${
-                                                    hasColor ? 'bg-white/20 text-white' : ''
+                                                    hasColor
+                                                        ? 'bg-white/20 text-white'
+                                                        : ''
                                                 }`}
-                                                style={!hasColor && goal!.Area.color ? { backgroundColor: goal!.Area.color + '33', color: goal!.Area.color } : {}}
+                                                style={
+                                                    !hasColor &&
+                                                    goal!.Area.color
+                                                        ? {
+                                                              backgroundColor:
+                                                                  goal!.Area
+                                                                      .color +
+                                                                  '33',
+                                                              color: goal!.Area
+                                                                  .color,
+                                                          }
+                                                        : {}
+                                                }
                                             >
-                                                {!hasColor && !goal!.Area.color && (
-                                                    <span className="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500" />
-                                                )}
+                                                {!hasColor &&
+                                                    !goal!.Area.color && (
+                                                        <span className="w-2 h-2 rounded-full bg-gray-400 dark:bg-gray-500" />
+                                                    )}
                                                 {goal!.Area.name}
                                             </Link>
-                                            <span className={`text-xs ${hasColor ? 'text-white/40' : 'text-gray-300 dark:text-gray-600'}`}>/</span>
+                                            <span
+                                                className={`text-xs ${hasColor ? 'text-white/40' : 'text-gray-300 dark:text-gray-600'}`}
+                                            >
+                                                /
+                                            </span>
                                         </>
                                     ) : null}
                                     <div className="flex items-center gap-1.5">
-                                        <FlagIcon className={`h-3.5 w-3.5 ${hasColor ? 'text-white/70' : 'text-blue-500'}`} />
-                                        <p className={`text-xs font-medium uppercase tracking-widest ${hasColor ? 'text-white/60' : 'text-gray-400 dark:text-gray-500'}`}>
+                                        <FlagIcon
+                                            className={`h-3.5 w-3.5 ${hasColor ? 'text-white/70' : 'text-blue-500'}`}
+                                        />
+                                        <p
+                                            className={`text-xs font-medium uppercase tracking-widest ${hasColor ? 'text-white/60' : 'text-gray-400 dark:text-gray-500'}`}
+                                        >
                                             {t('goals.singular', 'Goal')}
                                         </p>
                                     </div>
                                 </div>
 
-                                <h1 className={`text-3xl font-light ${hasColor ? 'text-white' : 'text-gray-900 dark:text-gray-100'}`}>
+                                <h1
+                                    className={`text-3xl font-light ${hasColor ? 'text-white' : 'text-gray-900 dark:text-gray-100'}`}
+                                >
                                     {goal!.title}
                                 </h1>
                                 {goal!.why && (
-                                    <p className={`mt-2 text-sm italic ${hasColor ? 'text-white/80' : 'text-gray-500 dark:text-gray-400'}`}>
+                                    <p
+                                        className={`mt-2 text-sm italic ${hasColor ? 'text-white/80' : 'text-gray-500 dark:text-gray-400'}`}
+                                    >
                                         {goal!.why}
                                     </p>
                                 )}
-                                <div className={`mt-3 flex gap-4 text-xs ${hasColor ? 'text-white/70' : 'text-gray-500 dark:text-gray-400'}`}>
-                                    <span>{t(`goals.status.${goal!.status}`, goal!.status)}</span>
-                                    <span>{t(`goals.horizon.${goal!.horizon}`, goal!.horizon)}</span>
+                                <div
+                                    className={`mt-3 flex gap-4 text-xs ${hasColor ? 'text-white/70' : 'text-gray-500 dark:text-gray-400'}`}
+                                >
+                                    <span>
+                                        {t(
+                                            `goals.status.${goal!.status}`,
+                                            goal!.status
+                                        )}
+                                    </span>
+                                    <span>
+                                        {t(
+                                            `goals.horizon.${goal!.horizon}`,
+                                            goal!.horizon
+                                        )}
+                                    </span>
                                     {goal!.target_date && (
-                                        <span>{t('goals.targetDate', 'Target')}: {new Date(goal!.target_date).toLocaleDateString()}</span>
+                                        <span>
+                                            {t('goals.targetDate', 'Target')}:{' '}
+                                            {new Date(
+                                                goal!.target_date
+                                            ).toLocaleDateString()}
+                                        </span>
                                     )}
                                 </div>
-                                <div className={`mt-3 flex gap-4 text-xs ${hasColor ? 'text-white/70' : 'text-gray-500 dark:text-gray-400'}`}>
-                                    <span>{tasks.length} {t('tasks.title', 'tasks')}</span>
-                                    <span>{goalProjects.length} {t('projects.title', 'projects')}</span>
+                                <div
+                                    className={`mt-3 flex gap-4 text-xs ${hasColor ? 'text-white/70' : 'text-gray-500 dark:text-gray-400'}`}
+                                >
+                                    <span>
+                                        {tasks.length}{' '}
+                                        {t('tasks.title', 'tasks')}
+                                    </span>
+                                    <span>
+                                        {goalProjects.length}{' '}
+                                        {t('projects.title', 'projects')}
+                                    </span>
                                 </div>
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
@@ -490,27 +630,45 @@ const GoalDetails: React.FC = () => {
                     {/* Projects section */}
                     <div>
                         <h3 className="text-lg font-light text-gray-700 dark:text-gray-300 mb-4">
-                            {t('projects.title', 'Projects')} ({goalProjects.length})
+                            {t('projects.title', 'Projects')} (
+                            {goalProjects.length})
                         </h3>
                         {goalProjects.length === 0 ? (
                             <p className="text-sm text-gray-400 dark:text-gray-500">
-                                {t('goals.noProjects', 'No projects linked to this goal.')}
+                                {t(
+                                    'goals.noProjects',
+                                    'No projects linked to this goal.'
+                                )}
                             </p>
                         ) : (
                             <div className="flex flex-col gap-2">
                                 {goalProjects.map((project) => (
                                     <Link
                                         key={project.uid ?? project.id}
-                                        to={project.uid ? createProjectUrl({ uid: project.uid, name: project.name }) : '/projects'}
+                                        to={
+                                            project.uid
+                                                ? createProjectUrl({
+                                                      uid: project.uid,
+                                                      name: project.name,
+                                                  })
+                                                : '/projects'
+                                        }
                                         className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 hover:bg-white dark:hover:bg-gray-800 transition-colors group border-l-4"
-                                        style={{ borderLeftColor: (project as any).color || '#6366f1' }}
+                                        style={{
+                                            borderLeftColor:
+                                                (project as any).color ||
+                                                '#6366f1',
+                                        }}
                                     >
                                         <span className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate flex-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                                             {project.name}
                                         </span>
                                         {project.status && (
                                             <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">
-                                                {project.status.replace('_', ' ')}
+                                                {project.status.replace(
+                                                    '_',
+                                                    ' '
+                                                )}
                                             </span>
                                         )}
                                     </Link>
@@ -526,7 +684,10 @@ const GoalDetails: React.FC = () => {
                         </h3>
                         {tasks.length === 0 ? (
                             <p className="text-sm text-gray-400 dark:text-gray-500">
-                                {t('goals.noTasks', 'No tasks assigned to this goal.')}
+                                {t(
+                                    'goals.noTasks',
+                                    'No tasks assigned to this goal.'
+                                )}
                             </p>
                         ) : (
                             <div className="space-y-6">
@@ -541,7 +702,8 @@ const GoalDetails: React.FC = () => {
                                 {completedTasks.length > 0 && (
                                     <div>
                                         <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">
-                                            {t('tasks.completed', 'Completed')} ({completedTasks.length})
+                                            {t('tasks.completed', 'Completed')}{' '}
+                                            ({completedTasks.length})
                                         </h4>
                                         <TaskList
                                             tasks={completedTasks}
@@ -558,205 +720,187 @@ const GoalDetails: React.FC = () => {
                 </div>
             )}
 
-            {/* Strategy (GoalsHQ measurable tier) — only in view mode, only when enabled */}
-            {!isNew && !isEditing && goal && goalshqEnabled && !goalHqError && goalHq && (
-                <div className="mt-10 border-t border-gray-200 dark:border-gray-700 pt-8">
-                    <div className="mb-4 flex items-center justify-between gap-3">
-                        <h2 className="text-lg font-light text-gray-700 dark:text-gray-300">
-                            {t('goalshq.strategy', 'Strategy')}
+            {/* GoalsHQ measurement — only in view mode, only when enabled */}
+            {!isNew &&
+                !isEditing &&
+                goal &&
+                goalshqEnabled &&
+                !goalHqError &&
+                goalHq && (
+                    <div className="mt-10 border-t border-gray-200 dark:border-gray-700 pt-8">
+                        <h2 className="mb-4 text-lg font-light text-gray-700 dark:text-gray-300">
+                            {t('goalshq.progress', 'Progress')}
                         </h2>
-                        <div className="flex items-center gap-3">
-                            <ProgressBar
-                                percent={goalHq.percent}
-                                health={goalHq.health}
-                                className="w-32"
-                            />
-                            <PercentLabel percent={goalHq.percent} />
-                            <HealthChip health={goalHq.health} />
-                            <TrendSparkline points={goalHq.trend} />
-                        </div>
-                    </div>
 
-                    <div className="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-700">
-                        <label className="flex items-center gap-2">
-                            <span className="text-gray-500 dark:text-gray-400">
-                                {t('goalshq.progressMode', 'Progress from')}
-                            </span>
-                            <select
-                                value={goalHq.settings.progress_mode}
-                                onChange={(e) =>
-                                    setGoalProgressMode(
-                                        e.target.value as GoalProgressMode
-                                    )
-                                }
-                                className="rounded border border-gray-300 bg-white px-2 py-1 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                            >
-                                {GOAL_PROGRESS_MODES.map((m) => (
-                                    <option key={m} value={m}>
-                                        {t(`goalshq.mode.${m}`, m)}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <label className="flex items-center gap-2">
-                            <span className="text-gray-500 dark:text-gray-400">
-                                {t('goalshq.importance', 'Importance')}
-                            </span>
-                            <ImportanceStars
-                                value={goalHq.settings.importance}
-                                onChange={setGoalImportance}
-                            />
-                        </label>
-                    </div>
+                        <DualProgress
+                            executionPercent={goalHq.execution_percent}
+                            executionHealth={goalHq.execution_health}
+                            outcomePercent={goalHq.outcome_percent}
+                            outcomeHealth={goalHq.outcome_health}
+                            metricsEnabled={goalHq.settings.metrics_enabled}
+                            executionNote={t(
+                                'goalshq.fromProjectsTasks',
+                                'from {{p}} projects + direct tasks',
+                                { p: goalHq.projects.length }
+                            )}
+                            outcomeNote={t(
+                                'goalshq.fromKrs',
+                                'from {{n}} key results',
+                                { n: goalHq.key_results.length }
+                            )}
+                            executionTrend={goalHq.trend.filter(
+                                (s) => (s.kind ?? 'execution') === 'execution'
+                            )}
+                            outcomeTrend={goalHq.trend.filter(
+                                (s) => s.kind === 'outcome'
+                            )}
+                        />
 
-                    <section className="mb-8">
-                        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            {t('goalshq.strategies', 'Strategies')}
-                        </h3>
-                        {(() => {
-                            const isInactive = (s: (typeof goalHq.strategies)[number]) =>
-                                s.status !== 'active' || s.kind === 'experiment';
-                            const visible = goalHq.strategies.filter(
-                                (s) => !isInactive(s)
-                            );
-                            const inactive = goalHq.strategies.filter(isInactive);
-                            const renderStrategy = (
-                                s: (typeof goalHq.strategies)[number]
-                            ) => (
-                                <Link
-                                    key={s.uid}
-                                    to={createStrategyUrl({
-                                        uid: s.uid,
-                                        name: s.name,
-                                    })}
-                                    className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 hover:shadow-sm dark:border-gray-700"
-                                >
-                                    <span className="flex-1 font-medium text-gray-800 dark:text-gray-100">
-                                        {s.name}
-                                    </span>
-                                    {s.kind === 'experiment' && (
-                                        <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                                            {t('goalshq.experiment', 'experiment')}
-                                        </span>
-                                    )}
-                                    {s.status !== 'active' && (
-                                        <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                                            {t(
-                                                `goalshq.strategyStatus.${s.status}`,
-                                                s.status
-                                            )}
-                                        </span>
-                                    )}
-                                    <span className="text-xs text-gray-400">
-                                        {s.kind}
-                                    </span>
-                                    <ImportanceStars value={s.importance} />
-                                    <ProgressBar
-                                        percent={s.percent}
-                                        health={s.health}
-                                        className="w-24"
-                                    />
-                                    <PercentLabel percent={s.percent} />
-                                    <HealthChip health={s.health} />
-                                </Link>
-                            );
-                            return (
-                                <div className="space-y-2">
-                                    {visible.map(renderStrategy)}
-                                    {goalHq.strategies.length === 0 && (
-                                        <p className="text-sm text-gray-400">
-                                            {t(
-                                                'goalshq.noStrategies',
-                                                'No strategies yet — add the engine(s) that will move this goal.'
-                                            )}
-                                        </p>
-                                    )}
-                                    {inactive.length > 0 && (
-                                        <>
-                                            <button
-                                                onClick={() =>
-                                                    setShowInactiveStrategies(
-                                                        (v) => !v
-                                                    )
-                                                }
-                                                className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                                            >
-                                                {showInactiveStrategies
-                                                    ? t(
-                                                          'goalshq.hideInactiveStrategies',
-                                                          'Hide paused/experimental strategies'
-                                                      )
-                                                    : t(
-                                                          'goalshq.showInactiveStrategies',
-                                                          'Show {{count}} paused/experimental strategies',
-                                                          { count: inactive.length }
-                                                      )}
-                                            </button>
-                                            {showInactiveStrategies &&
-                                                inactive.map(renderStrategy)}
-                                        </>
-                                    )}
-                                </div>
-                            );
-                        })()}
-                        <div className="mt-3 flex items-center gap-2">
+                        <label className="mt-3 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                             <input
-                                value={newStrategy}
-                                onChange={(e) => setNewStrategy(e.target.value)}
-                                placeholder={t(
-                                    'goalshq.newStrategy',
-                                    'New strategy name'
-                                )}
-                                className="flex-1 rounded border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                                type="checkbox"
+                                checked={goalHq.settings.metrics_enabled}
+                                onChange={(e) =>
+                                    toggleOutcomeMetrics(e.target.checked)
+                                }
                             />
-                            <button
-                                onClick={addStrategy}
-                                className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700"
-                            >
-                                {t('common.add', 'Add')}
-                            </button>
-                        </div>
-                    </section>
+                            {t(
+                                'goalshq.enableOutcomeMetrics',
+                                'Track outcome metrics (Key Results / Milestones)'
+                            )}
+                        </label>
 
-                    {goalHq.direct_projects.length > 0 && (
-                        <section className="mb-8">
+                        {goalHq.settings.metrics_enabled && (
+                            <section className="mt-6">
+                                <MetricsPanels
+                                    parentType="goal"
+                                    parentUid={goal.uid!}
+                                    keyResults={goalHq.key_results}
+                                    milestones={goalHq.milestones}
+                                    onChange={() => loadGoalHq(goal.uid!)}
+                                />
+                            </section>
+                        )}
+
+                        <section className="mt-8">
+                            <div className="mb-3 flex items-center justify-between">
+                                <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                    {t('goalshq.strategies', 'Strategies')}
+                                </h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setStrategyModalOpen(true)}
+                                    className="text-xs text-blue-600 hover:underline dark:text-blue-400"
+                                >
+                                    {t('goalshq.newStrategy', '+ New strategy')}
+                                </button>
+                            </div>
+                            <p className="mb-2 text-xs text-gray-400 dark:text-gray-500">
+                                {t(
+                                    'goalshq.strategiesGroupingHint',
+                                    'Grouping only — not part of the numbers above.'
+                                )}
+                            </p>
+                            <div className="space-y-2">
+                                {goalHq.strategies.map((s) => (
+                                    <Link
+                                        key={s.uid}
+                                        to={createStrategyUrl({
+                                            uid: s.uid,
+                                            name: s.name,
+                                        })}
+                                        className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 hover:shadow-sm dark:border-gray-700"
+                                    >
+                                        {s.color && (
+                                            <span
+                                                className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                                                style={{
+                                                    backgroundColor: s.color,
+                                                }}
+                                            />
+                                        )}
+                                        <span className="flex-1 truncate font-medium text-gray-800 dark:text-gray-100">
+                                            {s.name}
+                                        </span>
+                                        {s.status !== 'active' && (
+                                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                                                {t(
+                                                    `goalshq.strategyStatus.${s.status}`,
+                                                    s.status
+                                                )}
+                                            </span>
+                                        )}
+                                        <ProgressBar
+                                            percent={s.summary.percent}
+                                            health={s.summary.health}
+                                            className="w-20"
+                                        />
+                                        <PercentLabel
+                                            percent={s.summary.percent}
+                                        />
+                                        <HealthChip health={s.summary.health} />
+                                    </Link>
+                                ))}
+                                {goalHq.strategies.length === 0 && (
+                                    <p className="text-sm text-gray-400">
+                                        {t(
+                                            'goalshq.noStrategies',
+                                            'No strategies yet.'
+                                        )}
+                                    </p>
+                                )}
+                            </div>
+                        </section>
+
+                        <section className="mt-8">
                             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                {t('goalshq.directProjects', 'Direct projects')}
+                                {t('goalshq.projects', 'Projects')}
                             </h3>
                             <ul className="space-y-1 text-sm">
-                                {goalHq.direct_projects.map((p) => (
+                                {goalHq.projects.map((p) => (
                                     <li
                                         key={p.uid}
                                         className="flex items-center gap-3 rounded border border-gray-200 p-2 dark:border-gray-700"
                                     >
-                                        <span className="flex-1 text-gray-800 dark:text-gray-100">
+                                        <Link
+                                            to={createProjectUrl({
+                                                uid: p.uid,
+                                                name: p.name,
+                                            })}
+                                            className="flex-1 truncate text-gray-800 hover:text-blue-500 hover:underline dark:text-gray-100 dark:hover:text-blue-400"
+                                        >
                                             {p.name}
-                                        </span>
+                                        </Link>
                                         <ProgressBar
-                                            percent={p.percent}
+                                            percent={p.execution_percent}
                                             className="w-24"
                                         />
-                                        <PercentLabel percent={p.percent} />
+                                        <PercentLabel
+                                            percent={p.execution_percent}
+                                        />
                                     </li>
                                 ))}
+                                {goalHq.projects.length === 0 && (
+                                    <li className="text-xs text-gray-400">
+                                        {t(
+                                            'goalshq.noProjects',
+                                            'No projects yet.'
+                                        )}
+                                    </li>
+                                )}
                             </ul>
                         </section>
-                    )}
 
-                    <section>
-                        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                            {t('goalshq.goalMetrics', 'Goal metrics')}
-                        </h3>
-                        <MetricsPanels
-                            parentType="goal"
-                            parentUid={goal.uid!}
-                            keyResults={goalHq.key_results}
-                            milestones={goalHq.milestones}
-                            onChange={() => loadGoalHq(goal.uid!)}
-                        />
-                    </section>
-                </div>
-            )}
+                        {strategyModalOpen && (
+                            <StrategyModal
+                                isOpen
+                                defaultGoalUid={goal.uid}
+                                onClose={() => setStrategyModalOpen(false)}
+                                onSaved={() => loadGoalHq(goal.uid!)}
+                            />
+                        )}
+                    </div>
+                )}
 
             {isConfirmDeleteOpen && (
                 <ConfirmDialog

@@ -7,7 +7,11 @@ import { fetchGoalshqGoals } from '../../utils/goalsHqService';
 import { CarryoverEvent } from '../../entities/CarryoverEvent';
 import { GoalSummary } from '../../entities/Goal';
 import { createGoalUrl } from '../../utils/slugUtils';
-import { HealthChip, ProgressBar, PercentLabel } from '../Shared/ProgressIndicators';
+import {
+    HealthChip,
+    ProgressBar,
+    PercentLabel,
+} from '../Shared/ProgressIndicators';
 
 const CLASSIFICATION_LABEL: Record<CarryoverEvent['classification'], string> = {
     resurface: 'Resurface',
@@ -81,7 +85,10 @@ const ArchivePage: React.FC = () => {
                                         {t('archive.colTask', 'Task')}
                                     </th>
                                     <th className="px-3 py-2">
-                                        {t('archive.colClassification', 'Decision')}
+                                        {t(
+                                            'archive.colClassification',
+                                            'Decision'
+                                        )}
                                     </th>
                                     <th className="px-3 py-2">
                                         {t('archive.colOccurredOn', 'Occurred')}
@@ -127,12 +134,18 @@ const ArchivePage: React.FC = () => {
                                                       'archive.sourceOverride',
                                                       'you'
                                                   )
-                                                : t('archive.sourceAuto', 'auto')}
+                                                : t(
+                                                      'archive.sourceAuto',
+                                                      'auto'
+                                                  )}
                                         </td>
                                         <td className="px-3 py-2 text-gray-500 dark:text-gray-400">
                                             {e.reviewed_at
                                                 ? t('archive.reviewed', 'yes')
-                                                : t('archive.pending', 'pending')}
+                                                : t(
+                                                      'archive.pending',
+                                                      'pending'
+                                                  )}
                                         </td>
                                     </tr>
                                 ))}
@@ -180,12 +193,14 @@ const ArchivePage: React.FC = () => {
                                         {g.title}
                                     </span>
                                     <ProgressBar
-                                        percent={g.percent}
-                                        health={g.health}
+                                        percent={g.execution_percent}
+                                        health={g.execution_health}
                                         className="w-24"
                                     />
-                                    <PercentLabel percent={g.percent} />
-                                    <HealthChip health={g.health} />
+                                    <PercentLabel
+                                        percent={g.execution_percent}
+                                    />
+                                    <HealthChip health={g.execution_health} />
                                 </Link>
                             </li>
                         ))}
@@ -194,7 +209,7 @@ const ArchivePage: React.FC = () => {
                 <p className="mt-3 text-xs text-gray-400">
                     {t(
                         'archive.goalProgressHint',
-                        "Open a goal for its full progress trend over time."
+                        'Open a goal for its full progress trend over time.'
                     )}
                 </p>
             </section>

@@ -78,7 +78,7 @@ const TodayStrategyBanner: React.FC<Props> = ({
                 seen.set(`goal:${summary.uid}`, {
                     key: `goal:${summary.uid}`,
                     label: summary.title,
-                    health: summary.health,
+                    health: summary.execution_health,
                     to: createGoalUrl({
                         uid: summary.uid,
                         title: summary.title,
@@ -103,7 +103,7 @@ const TodayStrategyBanner: React.FC<Props> = ({
 
             const project = projectById.get(task.project_id);
             const goalObj: any = project
-                ? (project as any).Goal ?? (project as any).goal
+                ? ((project as any).Goal ?? (project as any).goal)
                 : null;
             if (!goalObj?.uid) return;
             const summary = goalSummaryByUid.get(goalObj.uid);
@@ -111,7 +111,7 @@ const TodayStrategyBanner: React.FC<Props> = ({
             seen.set(`goal:${summary.uid}`, {
                 key: `goal:${summary.uid}`,
                 label: summary.title,
-                health: summary.health,
+                health: summary.execution_health,
                 to: createGoalUrl({ uid: summary.uid, title: summary.title }),
             });
         });
@@ -130,10 +130,7 @@ const TodayStrategyBanner: React.FC<Props> = ({
     return (
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500 dark:bg-amber-950/30 dark:text-amber-200">
             <span className="font-medium">
-                {t(
-                    'tasks.todayDrivenBy',
-                    "Today's priorities are driven by:"
-                )}
+                {t('tasks.todayDrivenBy', "Today's priorities are driven by:")}
             </span>
             {drivingItems.map((item) => (
                 <Link
