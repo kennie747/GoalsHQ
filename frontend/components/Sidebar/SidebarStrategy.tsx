@@ -9,6 +9,8 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../../store/useStore';
 import { createStrategyUrl } from '../../utils/slugUtils';
+import { fetchStrategies } from '../../utils/goalsHqService';
+import { Strategy } from '../../entities/Strategy';
 
 interface Props {
     handleNavClick: (path: string, title: string, icon?: JSX.Element) => void;
@@ -35,8 +37,13 @@ const SidebarStrategy: React.FC<Props> = ({ handleNavClick, location }) => {
         (state) => state.strategiesStore.loadGoalSummaries
     );
 
+    const [allStrategies, setAllStrategies] = useState<Strategy[]>([]);
+
     useEffect(() => {
         if (!hasLoaded) loadGoalSummaries();
+        fetchStrategies()
+            .then(setAllStrategies)
+            .catch(() => setAllStrategies([]));
     }, [hasLoaded, loadGoalSummaries]);
 
     const path = '/strategy';
@@ -49,11 +56,15 @@ const SidebarStrategy: React.FC<Props> = ({ handleNavClick, location }) => {
     const archiveIcon = <ArchiveBoxIcon className="h-4 w-4 flex-shrink-0" />;
     const archiveActive = location.pathname.startsWith('/archive');
 
-    const strategies = goalSummaries
-        .flatMap((g) =>
-            (g.strategies || []).map((s) => ({ ...s, goalTitle: g.title }))
-        )
-        .filter((s) => s.status === 'active');
+    const strategies =
+        allStrategies.length > 0
+            ? allStrategies
+                  .filter((s) => s.status === 'active')
+                  .map((s) => ({ uid: s.uid, name: s.name }))
+            : goalSummaries
+                  .flatMap((g) => g.strategies || [])
+                  .filter((s) => s.status === 'active')
+                  .map((s) => ({ uid: s.uid, name: s.name }));
 
     const itemClass = (isActive: boolean) =>
         `group flex justify-between items-center rounded-[8px] pl-[30px] pr-[10px] py-[4px] text-[13.5px] cursor-pointer text-gray-500 dark:text-[oklch(82%_0.006_95)] hover:bg-gray-100 dark:hover:bg-[oklch(24%_0.015_250)] ${
@@ -69,7 +80,9 @@ const SidebarStrategy: React.FC<Props> = ({ handleNavClick, location }) => {
     useEffect(() => {
         if (
             strategies.some(
-                (s) => createStrategyUrl({ uid: s.uid, name: s.name }) === location.pathname
+                (s) =>
+                    createStrategyUrl({ uid: s.uid, name: s.name }) ===
+                    location.pathname
             )
         ) {
             setIsExpanded(true);
@@ -104,12 +117,18 @@ const SidebarStrategy: React.FC<Props> = ({ handleNavClick, location }) => {
                                 e.stopPropagation();
                                 handleNavClick(
                                     '/strategy/new',
-                                    t('goalshq.newStrategyTitle', 'New Strategy'),
+                                    t(
+                                        'goalshq.newStrategyTitle',
+                                        'New Strategy'
+                                    ),
                                     icon
                                 );
                             }}
                             className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity text-gray-400 dark:text-gray-500 hover:text-black dark:hover:text-white focus:outline-none"
-                            aria-label={t('goalshq.addStrategy', 'Add Strategy')}
+                            aria-label={t(
+                                'goalshq.addStrategy',
+                                'Add Strategy'
+                            )}
                             title={t('goalshq.addStrategy', 'Add Strategy')}
                         >
                             <PlusIcon className="h-3.5 w-3.5" />

@@ -69,7 +69,10 @@ const MetricsPanels: React.FC<Props> = ({
     const [propagateUid, setPropagateUid] = useState<string | null>(null);
     const [propagatePick, setPropagatePick] = useState<Set<string>>(new Set());
     const [coverage, setCoverage] = useState<
-        Record<string, { child_target_sum: number; target: number; gap: number }>
+        Record<
+            string,
+            { child_target_sum: number; target: number; gap: number }
+        >
     >({});
 
     const doPropagate = async (kr: KeyResult) => {
@@ -162,6 +165,8 @@ const MetricsPanels: React.FC<Props> = ({
             setBusy(false);
         }
     };
+
+    const [triggerMsUid, setTriggerMsUid] = useState<string | null>(null);
 
     const toggleMs = async (m: Milestone) => {
         await updateMilestone(m.uid, {
@@ -424,60 +429,177 @@ const MetricsPanels: React.FC<Props> = ({
                 </h3>
                 <ul className="mb-3 space-y-2">
                     {milestones.map((m) => (
-                        <li
-                            key={m.uid}
-                            className="flex items-center gap-2 rounded border border-gray-200 p-2 text-sm dark:border-gray-700"
-                        >
-                            <input
-                                type="checkbox"
-                                checked={m.status === 'achieved'}
-                                onChange={() => toggleMs(m)}
-                            />
-                            <span
-                                className={`flex-1 ${
-                                    m.status === 'achieved'
-                                        ? 'text-gray-400 line-through'
-                                        : 'text-gray-800 dark:text-gray-100'
-                                }`}
-                            >
-                                {m.title}
-                            </span>
-                            {m.target_date && (
-                                <span className="text-xs text-gray-400">
-                                    {m.target_date}
-                                </span>
-                            )}
-                            {expandedUids.has(m.uid) ? (
-                                <span className="text-xs text-green-600 dark:text-green-400">
-                                    {t('goalshq.msExpanded', 'Task created')}
-                                </span>
-                            ) : (
-                                <button
-                                    aria-label={t(
-                                        'goalshq.msExpand',
-                                        'Expand into task'
-                                    )}
-                                    title={t(
-                                        'goalshq.msExpand',
-                                        'Expand into task'
-                                    )}
-                                    onClick={() => expandMs(m)}
-                                    className="text-gray-400 hover:text-blue-500"
+                        <React.Fragment key={m.uid}>
+                            <li className="flex items-center gap-2 rounded border border-gray-200 p-2 text-sm dark:border-gray-700">
+                                <input
+                                    type="checkbox"
+                                    checked={m.status === 'achieved'}
+                                    onChange={() => toggleMs(m)}
+                                />
+                                <span
+                                    className={`flex-1 ${
+                                        m.status === 'achieved'
+                                            ? 'text-gray-400 line-through'
+                                            : 'text-gray-800 dark:text-gray-100'
+                                    }`}
                                 >
-                                    <ArrowRightCircleIcon className="h-4 w-4" />
+                                    {m.title}
+                                    {m.auto_achieved && (
+                                        <span
+                                            className="ml-1 text-amber-500"
+                                            title="auto-achieved"
+                                        >
+                                            ⚡
+                                        </span>
+                                    )}
+                                </span>
+                                {m.target_date && (
+                                    <span className="text-xs text-gray-400">
+                                        {m.target_date}
+                                    </span>
+                                )}
+                                {!readOnly && (
+                                    <button
+                                        onClick={() =>
+                                            setTriggerMsUid(
+                                                triggerMsUid === m.uid
+                                                    ? null
+                                                    : m.uid
+                                            )
+                                        }
+                                        className="text-xs text-gray-400 hover:text-blue-500"
+                                        title={t(
+                                            'goalshq.autoAchieve',
+                                            'Auto-achieve triggers'
+                                        )}
+                                    >
+                                        ⚙
+                                    </button>
+                                )}
+                                {expandedUids.has(m.uid) ? (
+                                    <span className="text-xs text-green-600 dark:text-green-400">
+                                        {t(
+                                            'goalshq.msExpanded',
+                                            'Task created'
+                                        )}
+                                    </span>
+                                ) : (
+                                    <button
+                                        aria-label={t(
+                                            'goalshq.msExpand',
+                                            'Expand into task'
+                                        )}
+                                        title={t(
+                                            'goalshq.msExpand',
+                                            'Expand into task'
+                                        )}
+                                        onClick={() => expandMs(m)}
+                                        className="text-gray-400 hover:text-blue-500"
+                                    >
+                                        <ArrowRightCircleIcon className="h-4 w-4" />
+                                    </button>
+                                )}
+                                <button
+                                    aria-label={t('common.delete', 'Delete')}
+                                    onClick={async () => {
+                                        await deleteMilestone(m.uid);
+                                        onChange();
+                                    }}
+                                    className="text-gray-400 hover:text-red-500"
+                                >
+                                    <TrashIcon className="h-4 w-4" />
                                 </button>
+                            </li>
+                            {triggerMsUid === m.uid && (
+                                <li className="rounded border border-gray-300 bg-gray-50 p-2 text-xs dark:border-gray-600 dark:bg-gray-800">
+                                    <div className="mb-1 flex items-center gap-2">
+                                        <span className="text-gray-500">
+                                            {t(
+                                                'goalshq.completeWhen',
+                                                'Complete when linked tasks:'
+                                            )}
+                                        </span>
+                                        <select
+                                            value={m.completion_mode || 'all'}
+                                            onChange={async (e) => {
+                                                await updateMilestone(m.uid, {
+                                                    completion_mode: e.target
+                                                        .value as 'all' | 'any',
+                                                });
+                                                onChange();
+                                            }}
+                                            className={inputCls}
+                                        >
+                                            <option value="all">
+                                                {t(
+                                                    'goalshq.allDone',
+                                                    'all done'
+                                                )}
+                                            </option>
+                                            <option value="any">
+                                                {t(
+                                                    'goalshq.anyDone',
+                                                    'any done'
+                                                )}
+                                            </option>
+                                        </select>
+                                        <span className="text-gray-400">
+                                            ({(m.task_uids || []).length}{' '}
+                                            {t('goalshq.linked', 'linked')})
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-gray-500">
+                                            {t(
+                                                'goalshq.orKrReaches',
+                                                'or KR reaches'
+                                            )}
+                                        </span>
+                                        <select
+                                            value={m.auto_kr_uid || ''}
+                                            onChange={async (e) => {
+                                                await updateMilestone(m.uid, {
+                                                    auto_kr_uid:
+                                                        e.target.value || null,
+                                                });
+                                                onChange();
+                                            }}
+                                            className={inputCls}
+                                        >
+                                            <option value="">—</option>
+                                            {keyResults.map((k) => (
+                                                <option
+                                                    key={k.uid}
+                                                    value={k.uid}
+                                                >
+                                                    {k.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <input
+                                            type="number"
+                                            placeholder={t(
+                                                'goalshq.threshold',
+                                                'threshold'
+                                            )}
+                                            defaultValue={
+                                                m.auto_kr_threshold ?? ''
+                                            }
+                                            onBlur={async (e) => {
+                                                await updateMilestone(m.uid, {
+                                                    auto_kr_threshold: e.target
+                                                        .value
+                                                        ? Number(e.target.value)
+                                                        : null,
+                                                });
+                                                onChange();
+                                            }}
+                                            className={`${inputCls} w-24`}
+                                        />
+                                    </div>
+                                </li>
                             )}
-                            <button
-                                aria-label={t('common.delete', 'Delete')}
-                                onClick={async () => {
-                                    await deleteMilestone(m.uid);
-                                    onChange();
-                                }}
-                                className="text-gray-400 hover:text-red-500"
-                            >
-                                <TrashIcon className="h-4 w-4" />
-                            </button>
-                        </li>
+                        </React.Fragment>
                     ))}
                     {milestones.length === 0 && (
                         <li className="text-xs text-gray-400">
