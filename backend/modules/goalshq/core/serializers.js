@@ -95,7 +95,10 @@ function serializeKrEntry(e) {
     };
 }
 
-function serializeRecord(r, { attachments = [], countsTowardKrUid = null } = {}) {
+function serializeRecord(
+    r,
+    { attachments = [], countsTowardKrUid = null } = {}
+) {
     return {
         uid: r.uid,
         parent_type: r.parent_type,
