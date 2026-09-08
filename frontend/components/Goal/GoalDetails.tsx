@@ -43,6 +43,8 @@ import {
 } from '../Shared/ProgressIndicators';
 import MetricsPanels from '../Strategy/MetricsPanels';
 import StrategyModal from '../Strategy/StrategyModal';
+import RecordsPanel from '../Strategy/RecordsPanel';
+import ReportTab from '../Strategy/ReportTab';
 
 const TASK_STATUS_DONE = [2, 3, 'done', 'archived'];
 
@@ -92,6 +94,9 @@ const GoalDetails: React.FC = () => {
     const [goalHq, setGoalHq] = useState<GoalHqDetail | null>(null);
     const [goalHqError, setGoalHqError] = useState(false);
     const [strategyModalOpen, setStrategyModalOpen] = useState(false);
+    const [goalHqTab, setGoalHqTab] = useState<
+        'progress' | 'records' | 'report'
+    >('progress');
 
     const loadGoalHq = React.useCallback(async (goalUid: string) => {
         try {
@@ -728,168 +733,224 @@ const GoalDetails: React.FC = () => {
                 !goalHqError &&
                 goalHq && (
                     <div className="mt-10 border-t border-gray-200 dark:border-gray-700 pt-8">
-                        <h2 className="mb-4 text-lg font-light text-gray-700 dark:text-gray-300">
-                            {t('goalshq.progress', 'Progress')}
-                        </h2>
-
-                        <DualProgress
-                            executionPercent={goalHq.execution_percent}
-                            executionHealth={goalHq.execution_health}
-                            outcomePercent={goalHq.outcome_percent}
-                            outcomeHealth={goalHq.outcome_health}
-                            metricsEnabled={goalHq.settings.metrics_enabled}
-                            executionNote={t(
-                                'goalshq.fromProjectsTasks',
-                                'from {{p}} projects + direct tasks',
-                                { p: goalHq.projects.length }
-                            )}
-                            outcomeNote={t(
-                                'goalshq.fromKrs',
-                                'from {{n}} key results',
-                                { n: goalHq.key_results.length }
-                            )}
-                            executionTrend={goalHq.trend.filter(
-                                (s) => (s.kind ?? 'execution') === 'execution'
-                            )}
-                            outcomeTrend={goalHq.trend.filter(
-                                (s) => s.kind === 'outcome'
-                            )}
-                        />
-
-                        <label className="mt-3 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-                            <input
-                                type="checkbox"
-                                checked={goalHq.settings.metrics_enabled}
-                                onChange={(e) =>
-                                    toggleOutcomeMetrics(e.target.checked)
-                                }
-                            />
-                            {t(
-                                'goalshq.enableOutcomeMetrics',
-                                'Track outcome metrics (Key Results / Milestones)'
-                            )}
-                        </label>
-
-                        {goalHq.settings.metrics_enabled && (
-                            <section className="mt-6">
-                                <MetricsPanels
-                                    parentType="goal"
-                                    parentUid={goal.uid!}
-                                    keyResults={goalHq.key_results}
-                                    milestones={goalHq.milestones}
-                                    onChange={() => loadGoalHq(goal.uid!)}
-                                />
-                            </section>
-                        )}
-
-                        <section className="mt-8">
-                            <div className="mb-3 flex items-center justify-between">
-                                <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                    {t('goalshq.strategies', 'Strategies')}
-                                </h3>
-                                <button
-                                    type="button"
-                                    onClick={() => setStrategyModalOpen(true)}
-                                    className="text-xs text-blue-600 hover:underline dark:text-blue-400"
-                                >
-                                    {t('goalshq.newStrategy', '+ New strategy')}
-                                </button>
-                            </div>
-                            <p className="mb-2 text-xs text-gray-400 dark:text-gray-500">
-                                {t(
-                                    'goalshq.strategiesGroupingHint',
-                                    'Grouping only — not part of the numbers above.'
-                                )}
-                            </p>
-                            <div className="space-y-2">
-                                {goalHq.strategies.map((s) => (
-                                    <Link
-                                        key={s.uid}
-                                        to={createStrategyUrl({
-                                            uid: s.uid,
-                                            name: s.name,
-                                        })}
-                                        className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 hover:shadow-sm dark:border-gray-700"
+                        <div className="mb-4 flex gap-1 border-b border-gray-200 dark:border-gray-700">
+                            {(['progress', 'records', 'report'] as const).map(
+                                (x) => (
+                                    <button
+                                        key={x}
+                                        onClick={() => setGoalHqTab(x)}
+                                        className={`border-b-2 px-3 py-2 text-sm ${
+                                            goalHqTab === x
+                                                ? 'border-blue-500 font-semibold text-gray-900 dark:text-white'
+                                                : 'border-transparent text-gray-500'
+                                        }`}
                                     >
-                                        {s.color && (
-                                            <span
-                                                className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                                                style={{
-                                                    backgroundColor: s.color,
-                                                }}
-                                            />
-                                        )}
-                                        <span className="flex-1 truncate font-medium text-gray-800 dark:text-gray-100">
-                                            {s.name}
-                                        </span>
-                                        {s.status !== 'active' && (
-                                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
-                                                {t(
-                                                    `goalshq.strategyStatus.${s.status}`,
-                                                    s.status
-                                                )}
-                                            </span>
-                                        )}
-                                        <ProgressBar
-                                            percent={s.summary.percent}
-                                            health={s.summary.health}
-                                            className="w-20"
+                                        {t(`goalshq.tab_${x}`, x)}
+                                    </button>
+                                )
+                            )}
+                        </div>
+
+                        {goalHqTab === 'records' && (
+                            <RecordsPanel
+                                parentType="goal"
+                                parentUid={goal.uid!}
+                                keyResults={goalHq.key_results}
+                            />
+                        )}
+                        {goalHqTab === 'report' && (
+                            <ReportTab
+                                parentType="goal"
+                                parentUid={goal.uid!}
+                            />
+                        )}
+                        {goalHqTab === 'progress' && (
+                            <>
+                                <DualProgress
+                                    executionPercent={goalHq.execution_percent}
+                                    executionHealth={goalHq.execution_health}
+                                    outcomePercent={goalHq.outcome_percent}
+                                    outcomeHealth={goalHq.outcome_health}
+                                    metricsEnabled={
+                                        goalHq.settings.metrics_enabled
+                                    }
+                                    executionNote={t(
+                                        'goalshq.fromProjectsTasks',
+                                        'from {{p}} projects + direct tasks',
+                                        { p: goalHq.projects.length }
+                                    )}
+                                    outcomeNote={t(
+                                        'goalshq.fromKrs',
+                                        'from {{n}} key results',
+                                        { n: goalHq.key_results.length }
+                                    )}
+                                    executionTrend={goalHq.trend.filter(
+                                        (s) =>
+                                            (s.kind ?? 'execution') ===
+                                            'execution'
+                                    )}
+                                    outcomeTrend={goalHq.trend.filter(
+                                        (s) => s.kind === 'outcome'
+                                    )}
+                                />
+
+                                <label className="mt-3 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                                    <input
+                                        type="checkbox"
+                                        checked={
+                                            goalHq.settings.metrics_enabled
+                                        }
+                                        onChange={(e) =>
+                                            toggleOutcomeMetrics(
+                                                e.target.checked
+                                            )
+                                        }
+                                    />
+                                    {t(
+                                        'goalshq.enableOutcomeMetrics',
+                                        'Track outcome metrics (Key Results / Milestones)'
+                                    )}
+                                </label>
+
+                                {goalHq.settings.metrics_enabled && (
+                                    <section className="mt-6">
+                                        <MetricsPanels
+                                            parentType="goal"
+                                            parentUid={goal.uid!}
+                                            keyResults={goalHq.key_results}
+                                            milestones={goalHq.milestones}
+                                            onChange={() =>
+                                                loadGoalHq(goal.uid!)
+                                            }
                                         />
-                                        <PercentLabel
-                                            percent={s.summary.percent}
-                                        />
-                                        <HealthChip health={s.summary.health} />
-                                    </Link>
-                                ))}
-                                {goalHq.strategies.length === 0 && (
-                                    <p className="text-sm text-gray-400">
+                                    </section>
+                                )}
+
+                                <section className="mt-8">
+                                    <div className="mb-3 flex items-center justify-between">
+                                        <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                            {t(
+                                                'goalshq.strategies',
+                                                'Strategies'
+                                            )}
+                                        </h3>
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setStrategyModalOpen(true)
+                                            }
+                                            className="text-xs text-blue-600 hover:underline dark:text-blue-400"
+                                        >
+                                            {t(
+                                                'goalshq.newStrategy',
+                                                '+ New strategy'
+                                            )}
+                                        </button>
+                                    </div>
+                                    <p className="mb-2 text-xs text-gray-400 dark:text-gray-500">
                                         {t(
-                                            'goalshq.noStrategies',
-                                            'No strategies yet.'
+                                            'goalshq.strategiesGroupingHint',
+                                            'Grouping only — not part of the numbers above.'
                                         )}
                                     </p>
-                                )}
-                            </div>
-                        </section>
-
-                        <section className="mt-8">
-                            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                                {t('goalshq.projects', 'Projects')}
-                            </h3>
-                            <ul className="space-y-1 text-sm">
-                                {goalHq.projects.map((p) => (
-                                    <li
-                                        key={p.uid}
-                                        className="flex items-center gap-3 rounded border border-gray-200 p-2 dark:border-gray-700"
-                                    >
-                                        <Link
-                                            to={createProjectUrl({
-                                                uid: p.uid,
-                                                name: p.name,
-                                            })}
-                                            className="flex-1 truncate text-gray-800 hover:text-blue-500 hover:underline dark:text-gray-100 dark:hover:text-blue-400"
-                                        >
-                                            {p.name}
-                                        </Link>
-                                        <ProgressBar
-                                            percent={p.execution_percent}
-                                            className="w-24"
-                                        />
-                                        <PercentLabel
-                                            percent={p.execution_percent}
-                                        />
-                                    </li>
-                                ))}
-                                {goalHq.projects.length === 0 && (
-                                    <li className="text-xs text-gray-400">
-                                        {t(
-                                            'goalshq.noProjects',
-                                            'No projects yet.'
+                                    <div className="space-y-2">
+                                        {goalHq.strategies.map((s) => (
+                                            <Link
+                                                key={s.uid}
+                                                to={createStrategyUrl({
+                                                    uid: s.uid,
+                                                    name: s.name,
+                                                })}
+                                                className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 hover:shadow-sm dark:border-gray-700"
+                                            >
+                                                {s.color && (
+                                                    <span
+                                                        className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                                                        style={{
+                                                            backgroundColor:
+                                                                s.color,
+                                                        }}
+                                                    />
+                                                )}
+                                                <span className="flex-1 truncate font-medium text-gray-800 dark:text-gray-100">
+                                                    {s.name}
+                                                </span>
+                                                {s.status !== 'active' && (
+                                                    <span className="rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                                                        {t(
+                                                            `goalshq.strategyStatus.${s.status}`,
+                                                            s.status
+                                                        )}
+                                                    </span>
+                                                )}
+                                                <ProgressBar
+                                                    percent={s.summary.percent}
+                                                    health={s.summary.health}
+                                                    className="w-20"
+                                                />
+                                                <PercentLabel
+                                                    percent={s.summary.percent}
+                                                />
+                                                <HealthChip
+                                                    health={s.summary.health}
+                                                />
+                                            </Link>
+                                        ))}
+                                        {goalHq.strategies.length === 0 && (
+                                            <p className="text-sm text-gray-400">
+                                                {t(
+                                                    'goalshq.noStrategies',
+                                                    'No strategies yet.'
+                                                )}
+                                            </p>
                                         )}
-                                    </li>
-                                )}
-                            </ul>
-                        </section>
+                                    </div>
+                                </section>
+
+                                <section className="mt-8">
+                                    <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                        {t('goalshq.projects', 'Projects')}
+                                    </h3>
+                                    <ul className="space-y-1 text-sm">
+                                        {goalHq.projects.map((p) => (
+                                            <li
+                                                key={p.uid}
+                                                className="flex items-center gap-3 rounded border border-gray-200 p-2 dark:border-gray-700"
+                                            >
+                                                <Link
+                                                    to={createProjectUrl({
+                                                        uid: p.uid,
+                                                        name: p.name,
+                                                    })}
+                                                    className="flex-1 truncate text-gray-800 hover:text-blue-500 hover:underline dark:text-gray-100 dark:hover:text-blue-400"
+                                                >
+                                                    {p.name}
+                                                </Link>
+                                                <ProgressBar
+                                                    percent={
+                                                        p.execution_percent
+                                                    }
+                                                    className="w-24"
+                                                />
+                                                <PercentLabel
+                                                    percent={
+                                                        p.execution_percent
+                                                    }
+                                                />
+                                            </li>
+                                        ))}
+                                        {goalHq.projects.length === 0 && (
+                                            <li className="text-xs text-gray-400">
+                                                {t(
+                                                    'goalshq.noProjects',
+                                                    'No projects yet.'
+                                                )}
+                                            </li>
+                                        )}
+                                    </ul>
+                                </section>
+                            </>
+                        )}
 
                         {strategyModalOpen && (
                             <StrategyModal

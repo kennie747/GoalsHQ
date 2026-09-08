@@ -385,6 +385,158 @@ export interface ExpandedTask {
     due_date: string | null;
 }
 
+/* ============================================================ Part 2 */
+
+import { GoalshqRecord, RecordInput, KeyResultEntry } from '../entities/Record';
+import { GoalshqReport } from '../entities/GoalshqReport';
+
+type P2Parent = 'goal' | 'strategy' | 'project';
+
+const jsonHeaders = async () => ({
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'x-csrf-token': await getCsrfToken(),
+});
+
+export const fetchRecords = async (
+    parentType: P2Parent,
+    parentUid: string
+): Promise<GoalshqRecord[]> => {
+    const response = await fetch(
+        getApiPath(`goalshq/${parentType}/${parentUid}/records`),
+        { credentials: 'include', headers: { Accept: 'application/json' } }
+    );
+    await handleAuthResponse(response, 'Failed to load records.');
+    return (await response.json()).records;
+};
+
+export const createRecord = async (
+    parentType: P2Parent,
+    parentUid: string,
+    data: RecordInput
+): Promise<GoalshqRecord> => {
+    const response = await fetch(
+        getApiPath(`goalshq/${parentType}/${parentUid}/records`),
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: await jsonHeaders(),
+            body: JSON.stringify(data),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to create record.');
+    return (await response.json()).record;
+};
+
+export const updateRecord = async (
+    uid: string,
+    data: RecordInput
+): Promise<GoalshqRecord> => {
+    const response = await fetch(getApiPath(`goalshq/records/${uid}`), {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: await jsonHeaders(),
+        body: JSON.stringify(data),
+    });
+    await handleAuthResponse(response, 'Failed to update record.');
+    return (await response.json()).record;
+};
+
+export const deleteRecord = async (uid: string): Promise<void> => {
+    const response = await fetch(getApiPath(`goalshq/records/${uid}`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'x-csrf-token': await getCsrfToken() },
+    });
+    await handleAuthResponse(response, 'Failed to delete record.');
+};
+
+export const fetchKeyResultDetail = async (uid: string): Promise<KeyResult> => {
+    const response = await fetch(getApiPath(`goalshq/key-results/${uid}`), {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+    });
+    await handleAuthResponse(response, 'Failed to load key result.');
+    return (await response.json()).key_result;
+};
+
+export const fetchKrEntries = async (
+    uid: string
+): Promise<KeyResultEntry[]> => {
+    const response = await fetch(
+        getApiPath(`goalshq/key-results/${uid}/entries`),
+        { credentials: 'include', headers: { Accept: 'application/json' } }
+    );
+    await handleAuthResponse(response, 'Failed to load check-ins.');
+    return (await response.json()).entries;
+};
+
+export const createKrEntry = async (
+    uid: string,
+    data: { value: number; entry_date?: string; note?: string }
+): Promise<KeyResultEntry> => {
+    const response = await fetch(
+        getApiPath(`goalshq/key-results/${uid}/entries`),
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: await jsonHeaders(),
+            body: JSON.stringify(data),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to save check-in.');
+    return (await response.json()).entry;
+};
+
+export const propagateKeyResult = async (
+    uid: string,
+    nodes: { parent_type: P2Parent; parent_uid: string }[]
+): Promise<KeyResult> => {
+    const response = await fetch(
+        getApiPath(`goalshq/key-results/${uid}/propagate`),
+        {
+            method: 'POST',
+            credentials: 'include',
+            headers: await jsonHeaders(),
+            body: JSON.stringify({ nodes }),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to propagate key result.');
+    return (await response.json()).key_result;
+};
+
+export const setMilestoneTasks = async (
+    uid: string,
+    taskUids: string[]
+): Promise<Milestone[]> => {
+    const response = await fetch(
+        getApiPath(`goalshq/milestones/${uid}/tasks`),
+        {
+            method: 'PUT',
+            credentials: 'include',
+            headers: await jsonHeaders(),
+            body: JSON.stringify({ task_uids: taskUids }),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to link tasks.');
+    return (await response.json()).milestones;
+};
+
+export const fetchGoalshqReport = async (
+    parentType: P2Parent,
+    parentUid: string,
+    period = '30d'
+): Promise<GoalshqReport> => {
+    const response = await fetch(
+        getApiPath(
+            `goalshq/${parentType}/${parentUid}/report?period=${period}`
+        ),
+        { credentials: 'include', headers: { Accept: 'application/json' } }
+    );
+    await handleAuthResponse(response, 'Failed to load report.');
+    return (await response.json()).report;
+};
+
 export const expandMilestone = async (uid: string): Promise<ExpandedTask> => {
     const token = await getCsrfToken();
     const response = await fetch(

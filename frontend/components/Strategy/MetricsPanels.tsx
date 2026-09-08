@@ -16,6 +16,7 @@ import {
     updateMilestone,
     deleteMilestone,
     expandMilestone,
+    createKrEntry,
 } from '../../utils/goalsHqService';
 
 interface Props {
@@ -52,6 +53,16 @@ const MetricsPanels: React.FC<Props> = ({
     const [msDraft, setMsDraft] = useState({ title: '', target_date: '' });
     const [busy, setBusy] = useState(false);
     const [expandedUids, setExpandedUids] = useState<Set<string>>(new Set());
+    const [checkInUid, setCheckInUid] = useState<string | null>(null);
+    const [checkInValue, setCheckInValue] = useState('');
+
+    const submitCheckIn = async (kr: KeyResult) => {
+        if (checkInValue === '') return;
+        await createKrEntry(kr.uid, { value: Number(checkInValue) });
+        setCheckInUid(null);
+        setCheckInValue('');
+        onChange();
+    };
 
     const addKr = async () => {
         if (!krDraft.name.trim() || krDraft.target_value === '') return;
@@ -179,18 +190,64 @@ const MetricsPanels: React.FC<Props> = ({
                             >
                                 {t('goalshq.krAuto', 'auto')}
                             </button>
-                            <button
-                                aria-label={t('common.delete', 'Delete')}
-                                onClick={async () => {
-                                    await deleteKeyResult(kr.uid);
-                                    onChange();
-                                }}
-                                className="text-gray-400 hover:text-red-500"
-                            >
-                                <TrashIcon className="h-4 w-4" />
-                            </button>
+                            {!readOnly && (
+                                <button
+                                    onClick={() =>
+                                        setCheckInUid(
+                                            checkInUid === kr.uid
+                                                ? null
+                                                : kr.uid
+                                        )
+                                    }
+                                    className="text-xs text-blue-500 hover:underline"
+                                >
+                                    {t('goalshq.checkIn', '+ check-in')}
+                                </button>
+                            )}
+                            {!readOnly && (
+                                <button
+                                    aria-label={t('common.delete', 'Delete')}
+                                    onClick={async () => {
+                                        await deleteKeyResult(kr.uid);
+                                        onChange();
+                                    }}
+                                    className="text-gray-400 hover:text-red-500"
+                                >
+                                    <TrashIcon className="h-4 w-4" />
+                                </button>
+                            )}
                         </li>
                     ))}
+                    {checkInUid &&
+                        (() => {
+                            const kr = keyResults.find(
+                                (k) => k.uid === checkInUid
+                            );
+                            if (!kr) return null;
+                            return (
+                                <li className="flex items-center gap-2 rounded border border-blue-300 bg-blue-50 p-2 text-sm dark:border-blue-800 dark:bg-blue-900/20">
+                                    <span className="flex-1">
+                                        {t('goalshq.checkInFor', 'Check in')}:{' '}
+                                        {kr.name}
+                                    </span>
+                                    <input
+                                        type="number"
+                                        autoFocus
+                                        value={checkInValue}
+                                        onChange={(e) =>
+                                            setCheckInValue(e.target.value)
+                                        }
+                                        className={`${inputCls} w-24`}
+                                    />
+                                    <button
+                                        onClick={() => submitCheckIn(kr)}
+                                        className="rounded bg-blue-600 px-2 py-1 text-xs text-white"
+                                    >
+                                        {t('common.save', 'Save')}
+                                    </button>
+                                </li>
+                            );
+                        })()}
                     {keyResults.length === 0 && (
                         <li className="text-xs text-gray-400">
                             {t('goalshq.noKeyResults', 'No key results yet.')}

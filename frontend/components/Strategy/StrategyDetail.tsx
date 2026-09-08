@@ -21,6 +21,8 @@ import {
 } from '../Shared/ProgressIndicators';
 import MetricsPanels from './MetricsPanels';
 import StrategyModal from './StrategyModal';
+import RecordsPanel from './RecordsPanel';
+import ReportTab from './ReportTab';
 
 const statusPillCls: Record<string, string> = {
     active: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -40,6 +42,9 @@ const StrategyDetail: React.FC = () => {
     const [strategy, setStrategy] = useState<Strategy | null>(null);
     const [error, setError] = useState(false);
     const [editing, setEditing] = useState(isNew);
+    const [tab, setTab] = useState<'overview' | 'records' | 'report'>(
+        'overview'
+    );
 
     const load = useCallback(async () => {
         if (isNew) return;
@@ -170,107 +175,149 @@ const StrategyDetail: React.FC = () => {
                 </button>
             </div>
 
-            {/* Grouping summary */}
-            <div className="mb-6 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                <div className="mb-1 flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                        {t('goalshq.groupingSummary', 'Grouping summary')}
-                    </span>
-                    <span className="text-xs text-gray-400 dark:text-gray-500">
-                        {t(
-                            'goalshq.avgOfNProjects',
-                            'avg of {{count}} projects',
-                            {
-                                count: counts?.total ?? 0,
-                            }
-                        )}
-                    </span>
-                </div>
-                <div className="flex items-center gap-3">
-                    <ProgressBar
-                        percent={strategy.summary.percent}
-                        health={strategy.summary.health}
-                        className="max-w-xs"
-                    />
-                    <PercentLabel percent={strategy.summary.percent} />
-                    <HealthChip health={strategy.summary.health} />
-                    <TrendSparkline points={strategy.trend || []} />
-                </div>
+            {/* Tabs */}
+            <div className="mb-4 flex gap-1 border-b border-gray-200 dark:border-gray-700">
+                {(['overview', 'records', 'report'] as const).map((x) => (
+                    <button
+                        key={x}
+                        onClick={() => setTab(x)}
+                        className={`border-b-2 px-3 py-2 text-sm ${
+                            tab === x
+                                ? 'border-blue-500 font-semibold text-gray-900 dark:text-white'
+                                : 'border-transparent text-gray-500'
+                        }`}
+                    >
+                        {t(`goalshq.tab_${x}`, x)}
+                    </button>
+                ))}
             </div>
 
-            {/* Roster */}
-            <section className="mb-8">
-                <div className="mb-2 flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {t('goalshq.linkedProjects', 'Projects')}
-                    </h2>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                        {countsLabel}
-                    </span>
-                </div>
-                <ul className="space-y-1 text-sm">
-                    {strategy.projects.map((p) => (
-                        <li
-                            key={p.uid}
-                            className="flex items-center gap-3 rounded border border-gray-200 p-2 dark:border-gray-700"
-                        >
-                            <Link
-                                to={createProjectUrl({
-                                    uid: p.uid,
-                                    name: p.name,
-                                })}
-                                className="flex-1 truncate text-gray-800 hover:text-blue-500 hover:underline dark:text-gray-100 dark:hover:text-blue-400"
-                            >
-                                {p.name}
-                            </Link>
-                            <ProgressBar
-                                percent={p.execution_percent}
-                                className="w-24"
-                            />
-                            <PercentLabel percent={p.execution_percent} />
-                            <span className="hidden text-xs text-gray-400 sm:inline">
-                                {p.status}
-                            </span>
-                            <button
-                                aria-label={t('goalshq.unlink', 'Unlink')}
-                                onClick={() => unlink(p.uid)}
-                                className="text-gray-400 hover:text-red-500"
-                            >
-                                <XMarkIcon className="h-4 w-4" />
-                            </button>
-                        </li>
-                    ))}
-                    {strategy.projects.length === 0 && (
-                        <li className="text-xs text-gray-400">
-                            {t(
-                                'goalshq.noLinkedProjects',
-                                'No projects yet — add some from Edit.'
-                            )}
-                        </li>
-                    )}
-                </ul>
-            </section>
-
-            {/* Optional KRs / milestones (context only) */}
-            <section>
-                <h2 className="mb-1 text-lg font-semibold text-gray-900 dark:text-white">
-                    {t('goalshq.strategyMetrics', 'Key Results & Milestones')}
-                </h2>
-                <p className="mb-3 text-xs text-gray-400 dark:text-gray-500">
-                    {t(
-                        'goalshq.strategyMetricsHint',
-                        'For context — these are not rolled into the goal.'
-                    )}
-                </p>
-                <MetricsPanels
+            {tab === 'records' && (
+                <RecordsPanel
                     parentType="strategy"
                     parentUid={uid}
                     keyResults={strategy.key_results || []}
-                    milestones={strategy.milestones || []}
-                    readOnly={!strategy.metrics_editable}
-                    onChange={load}
                 />
-            </section>
+            )}
+            {tab === 'report' && (
+                <ReportTab parentType="strategy" parentUid={uid} />
+            )}
+            {tab === 'overview' && (
+                <>
+                    {/* Grouping summary */}
+                    <div className="mb-6 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                        <div className="mb-1 flex items-center justify-between">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                                {t(
+                                    'goalshq.groupingSummary',
+                                    'Grouping summary'
+                                )}
+                            </span>
+                            <span className="text-xs text-gray-400 dark:text-gray-500">
+                                {t(
+                                    'goalshq.avgOfNProjects',
+                                    'avg of {{count}} projects',
+                                    {
+                                        count: counts?.total ?? 0,
+                                    }
+                                )}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <ProgressBar
+                                percent={strategy.summary.percent}
+                                health={strategy.summary.health}
+                                className="max-w-xs"
+                            />
+                            <PercentLabel percent={strategy.summary.percent} />
+                            <HealthChip health={strategy.summary.health} />
+                            <TrendSparkline points={strategy.trend || []} />
+                        </div>
+                    </div>
+
+                    {/* Roster */}
+                    <section className="mb-8">
+                        <div className="mb-2 flex items-center justify-between">
+                            <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                                {t('goalshq.linkedProjects', 'Projects')}
+                            </h2>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {countsLabel}
+                            </span>
+                        </div>
+                        <ul className="space-y-1 text-sm">
+                            {strategy.projects.map((p) => (
+                                <li
+                                    key={p.uid}
+                                    className="flex items-center gap-3 rounded border border-gray-200 p-2 dark:border-gray-700"
+                                >
+                                    <Link
+                                        to={createProjectUrl({
+                                            uid: p.uid,
+                                            name: p.name,
+                                        })}
+                                        className="flex-1 truncate text-gray-800 hover:text-blue-500 hover:underline dark:text-gray-100 dark:hover:text-blue-400"
+                                    >
+                                        {p.name}
+                                    </Link>
+                                    <ProgressBar
+                                        percent={p.execution_percent}
+                                        className="w-24"
+                                    />
+                                    <PercentLabel
+                                        percent={p.execution_percent}
+                                    />
+                                    <span className="hidden text-xs text-gray-400 sm:inline">
+                                        {p.status}
+                                    </span>
+                                    <button
+                                        aria-label={t(
+                                            'goalshq.unlink',
+                                            'Unlink'
+                                        )}
+                                        onClick={() => unlink(p.uid)}
+                                        className="text-gray-400 hover:text-red-500"
+                                    >
+                                        <XMarkIcon className="h-4 w-4" />
+                                    </button>
+                                </li>
+                            ))}
+                            {strategy.projects.length === 0 && (
+                                <li className="text-xs text-gray-400">
+                                    {t(
+                                        'goalshq.noLinkedProjects',
+                                        'No projects yet — add some from Edit.'
+                                    )}
+                                </li>
+                            )}
+                        </ul>
+                    </section>
+
+                    {/* Optional KRs / milestones (context only) */}
+                    <section>
+                        <h2 className="mb-1 text-lg font-semibold text-gray-900 dark:text-white">
+                            {t(
+                                'goalshq.strategyMetrics',
+                                'Key Results & Milestones'
+                            )}
+                        </h2>
+                        <p className="mb-3 text-xs text-gray-400 dark:text-gray-500">
+                            {t(
+                                'goalshq.strategyMetricsHint',
+                                'For context — these are not rolled into the goal.'
+                            )}
+                        </p>
+                        <MetricsPanels
+                            parentType="strategy"
+                            parentUid={uid}
+                            keyResults={strategy.key_results || []}
+                            milestones={strategy.milestones || []}
+                            readOnly={!strategy.metrics_editable}
+                            onChange={load}
+                        />
+                    </section>
+                </>
+            )}
 
             {editing && (
                 <StrategyModal

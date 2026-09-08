@@ -3,48 +3,68 @@ import { getApiPath } from '../config/paths';
 import { getCsrfToken } from './csrfService';
 import { getServerConfig } from './configService';
 
+export type AttachmentParentType = 'task' | 'goalshq_record';
+
 /**
- * Upload a file attachment to a task
+ * Upload a file attachment to a polymorphic parent (task | goalshq_record).
  */
-export async function uploadAttachment(
-    taskUid: string,
+export async function uploadAttachmentTo(
+    parentType: AttachmentParentType,
+    parentUid: string,
     file: File
 ): Promise<Attachment> {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('taskUid', taskUid);
+    formData.append('parentType', parentType);
+    formData.append('parentUid', parentUid);
 
-    const response = await fetch(getApiPath('upload/task-attachment'), {
+    const response = await fetch(getApiPath('upload/attachment'), {
         method: 'POST',
         credentials: 'include',
-        headers: {
-            'x-csrf-token': await getCsrfToken(),
-        },
+        headers: { 'x-csrf-token': await getCsrfToken() },
         body: formData,
     });
-
     if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to upload attachment');
     }
-
     return await response.json();
 }
 
-/**
- * Fetch all attachments for a task
- */
+/** Upload a file attachment to a task (legacy signature). */
+export async function uploadAttachment(
+    taskUid: string,
+    file: File
+): Promise<Attachment> {
+    return uploadAttachmentTo('task', taskUid, file);
+}
+
+/** Fetch attachments for a polymorphic parent. */
+export async function fetchAttachmentsFor(
+    parentType: AttachmentParentType,
+    parentUid: string
+): Promise<Attachment[]> {
+    const response = await fetch(
+        getApiPath(`attachments/${parentType}/${parentUid}`),
+        { method: 'GET', credentials: 'include' }
+    );
+    if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch attachments');
+    }
+    return await response.json();
+}
+
+/** Fetch all attachments for a task (legacy signature). */
 export async function fetchAttachments(taskUid: string): Promise<Attachment[]> {
     const response = await fetch(getApiPath(`tasks/${taskUid}/attachments`), {
         method: 'GET',
         credentials: 'include',
     });
-
     if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to fetch attachments');
     }
-
     return await response.json();
 }
 
@@ -52,22 +72,18 @@ export async function fetchAttachments(taskUid: string): Promise<Attachment[]> {
  * Delete an attachment
  */
 export async function deleteAttachment(
-    taskUid: string,
-    attachmentUid: string
+    taskUidOrUnused: string,
+    attachmentUid?: string
 ): Promise<void> {
-    const response = await fetch(
-        getApiPath(`tasks/${taskUid}/attachments/${attachmentUid}`),
-        {
-            method: 'DELETE',
-            credentials: 'include',
-            headers: {
-                'x-csrf-token': await getCsrfToken(),
-            },
-        }
-    );
-
-    if (!response.ok) {
-        const errorData = await response.json();
+    // Legacy: deleteAttachment(taskUid, attachmentUid). New: deleteAttachment(uid).
+    const uid = attachmentUid ?? taskUidOrUnused;
+    const response = await fetch(getApiPath(`attachments/${uid}`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'x-csrf-token': await getCsrfToken() },
+    });
+    if (!response.ok && response.status !== 404) {
+        const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'Failed to delete attachment');
     }
 }

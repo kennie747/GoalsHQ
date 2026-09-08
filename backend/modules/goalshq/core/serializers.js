@@ -95,7 +95,7 @@ function serializeKrEntry(e) {
     };
 }
 
-function serializeRecord(r, { attachments = [] } = {}) {
+function serializeRecord(r, { attachments = [], countsTowardKrUid = null } = {}) {
     return {
         uid: r.uid,
         parent_type: r.parent_type,
@@ -105,7 +105,7 @@ function serializeRecord(r, { attachments = [] } = {}) {
         amount: num(r.amount),
         unit: r.unit,
         status: r.status,
-        counts_toward_kr_id: r.counts_toward_kr_id,
+        counts_toward_kr_uid: countsTowardKrUid,
         evidence_url: r.evidence_url,
         task_id: r.task_id,
         note_id: r.note_id,

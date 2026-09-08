@@ -931,8 +931,14 @@ async function attachmentsForRecord(recordId) {
 }
 
 async function serializeRecordFull(r) {
+    let countsTowardKrUid = null;
+    if (r.counts_toward_kr_id) {
+        const kr = await GoalshqKeyResult.findByPk(r.counts_toward_kr_id);
+        countsTowardKrUid = kr ? kr.uid : null;
+    }
     return s.serializeRecord(r, {
         attachments: await attachmentsForRecord(r.id),
+        countsTowardKrUid,
     });
 }
 
