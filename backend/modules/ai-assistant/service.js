@@ -1123,8 +1123,62 @@ Rules:
     return result;
 }
 
+/**
+ * Short narrative for a GoalsHQ report (Goal / Strategy / Project). Returns
+ * null if the LLM chain is unavailable or errors — the caller falls back to a
+ * templated static summary.
+ */
+async function generateGoalshqReportNarrative({
+    meta,
+    krs,
+    milestones,
+    records,
+}) {
+    if (!isAIConfigured()) return null;
+    const lines = [];
+    lines.push(
+        `Entity: ${meta.title} — execution ${meta.execution ?? '—'}%` +
+            (meta.outcome == null ? '' : `, outcome ${meta.outcome}%`)
+    );
+    for (const k of (krs || []).slice(0, 8)) {
+        lines.push(
+            `KR: ${k.name} ${k.current}/${k.target}${k.unit ? ' ' + k.unit : ''}`
+        );
+    }
+    for (const m of (milestones || []).slice(0, 8)) {
+        lines.push(
+            `Milestone: ${m.title} [${m.status}]${m.target_date ? ' due ' + m.target_date : ''}`
+        );
+    }
+    for (const r of (records || []).slice(0, 20)) {
+        lines.push(
+            `Record ${r.date}: ${r.title}${r.amount != null ? ' (' + r.amount + ')' : ''}${r.body ? ' — ' + r.body : ''}`
+        );
+    }
+    try {
+        const response = await callLLM({
+            messages: [
+                {
+                    role: 'system',
+                    content:
+                        'You write a 3-4 sentence progress narrative for a goal/strategy/project. Say what moved, what is at risk, and one concrete next focus. No preamble, no markdown headers.',
+                },
+                { role: 'user', content: lines.join('\n') },
+            ],
+            temperature: 0.4,
+            max_tokens: 220,
+        });
+        const text = extractMessageContent(response.choices[0]?.message);
+        return text ? text.trim() : null;
+    } catch {
+        return null;
+    }
+}
+
 module.exports = {
     isAIConfigured,
+    isConfigured: isAIConfigured,
+    generateGoalshqReportNarrative,
     getProviderChainSummary,
     generateDailyBrief,
     getCachedBrief,

@@ -204,7 +204,7 @@ describe('GoalsHQ Part 2 — records, KR trees, milestone triggers, report', () 
         expect(kept.status).toBe('achieved');
     });
 
-    it('report assembles quantitative panels + a static narrative', async () => {
+    it('report assembles quantitative panels + a narrative (static fallback)', async () => {
         const kr = await agent
             .post(`/api/goalshq/goal/${goal.uid}/key-results`)
             .send({
@@ -219,13 +219,17 @@ describe('GoalsHQ Part 2 — records, KR trees, milestone triggers, report', () 
             record_date: '2026-09-06',
             counts_toward_kr_uid: kr.body.key_result.uid,
         });
-        const res = await agent.get(`/api/goalshq/goal/${goal.uid}/report`);
+        // narrative=false forces the templated static summary.
+        const res = await agent.get(
+            `/api/goalshq/goal/${goal.uid}/report?narrative=false`
+        );
         expect(res.status).toBe(200);
         expect(res.body.report.quantitative.record_count).toBe(1);
         expect(res.body.report.quantitative.by_category[0].key).toBe(
             'Research'
         );
         expect(res.body.report.qualitative.narrative_source).toBe('static');
+        expect(res.body.report.qualitative.narrative).toContain('$1M');
     });
 
     it('evidence file uploads against a record and is previewable/downloadable', async () => {

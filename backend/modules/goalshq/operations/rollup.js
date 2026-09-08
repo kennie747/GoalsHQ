@@ -31,9 +31,11 @@ const {
     GoalshqGoalSettings,
     GoalshqProjectSettings,
     GoalshqKeyResult,
+    GoalshqKeyResultEntry,
     GoalshqMilestone,
     GoalshqMilestoneTask,
     GoalshqProgressSnapshot,
+    GoalshqRecord,
 } = require('../../../models');
 const logService = require('../../../services/logService');
 const {
@@ -1198,6 +1200,7 @@ async function gcOrphans() {
         GoalshqKeyResult,
         GoalshqMilestone,
         GoalshqProgressSnapshot,
+        GoalshqRecord,
     ]) {
         // eslint-disable-next-line no-await-in-loop
         const orphanIds = (
@@ -1213,6 +1216,57 @@ async function gcOrphans() {
                 where: { id: { [Op.in]: orphanIds } },
             });
         }
+    }
+
+    // KR check-in entries + KR trees: drop entries/child-links whose KR is gone.
+    const liveKrIds = new Set(
+        (await GoalshqKeyResult.findAll({ attributes: ['id'] })).map(
+            (k) => k.id
+        )
+    );
+    const orphanEntryIds = (
+        await GoalshqKeyResultEntry.findAll({
+            attributes: ['id', 'key_result_id'],
+        })
+    )
+        .filter((e) => !liveKrIds.has(e.key_result_id))
+        .map((e) => e.id);
+    if (orphanEntryIds.length > 0) {
+        removed += await GoalshqKeyResultEntry.destroy({
+            where: { id: { [Op.in]: orphanEntryIds } },
+        });
+    }
+    // A child KR whose parent_kr_id is gone becomes a plain leaf.
+    await GoalshqKeyResult.update(
+        { parent_kr_id: null },
+        {
+            where: {
+                parent_kr_id: { [Op.notIn]: [...liveKrIds, 0] },
+            },
+        }
+    );
+
+    // Milestone task links whose milestone or task is gone.
+    const liveMilestoneIds = new Set(
+        (await GoalshqMilestone.findAll({ attributes: ['id'] })).map(
+            (m) => m.id
+        )
+    );
+    const orphanLinkIds = (
+        await GoalshqMilestoneTask.findAll({
+            attributes: ['id', 'milestone_id', 'task_id'],
+        })
+    )
+        .filter(
+            (l) =>
+                !liveMilestoneIds.has(l.milestone_id) ||
+                !liveTaskIds.has(l.task_id)
+        )
+        .map((l) => l.id);
+    if (orphanLinkIds.length > 0) {
+        removed += await GoalshqMilestoneTask.destroy({
+            where: { id: { [Op.in]: orphanLinkIds } },
+        });
     }
 
     if (removed > 0) {
