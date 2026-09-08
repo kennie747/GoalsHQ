@@ -68,5 +68,33 @@ router.post(
 router.patch('/goalshq/milestones/:uid', controller.updateMilestone);
 router.delete('/goalshq/milestones/:uid', controller.deleteMilestone);
 router.post('/goalshq/milestones/:uid/expand', controller.expandMilestone);
+router.put('/goalshq/milestones/:uid/tasks', controller.setMilestoneTasks);
+
+// Records ledger (Part 2)
+router.get(
+    '/goalshq/:parentType(goal|strategy|project)/:uid/records',
+    controller.listRecords
+);
+router.post(
+    '/goalshq/:parentType(goal|strategy|project)/:uid/records',
+    controller.createRecord
+);
+router.patch('/goalshq/records/:uid', controller.updateRecord);
+router.delete('/goalshq/records/:uid', controller.deleteRecord);
+
+// KR check-in history + propagation
+router.get('/goalshq/key-results/:uid', controller.getKeyResult);
+router.get('/goalshq/key-results/:uid/entries', controller.listKrEntries);
+router.post('/goalshq/key-results/:uid/entries', controller.createKrEntry);
+router.post(
+    '/goalshq/key-results/:uid/propagate',
+    controller.propagateKeyResult
+);
+
+// Per-entity report
+router.get(
+    '/goalshq/:parentType(goal|strategy|project)/:uid/report',
+    controller.getReport
+);
 
 module.exports = router;

@@ -18,7 +18,13 @@ const STRATEGY_STATUSES = ['active', 'paused', 'achieved', 'dropped'];
 const KR_DIRECTIONS = ['increase', 'decrease', 'maintain'];
 // 'tasks_done_count' auto-sets current_value to the count of done tasks in the
 // KR's parent scope on every rollup pass. Not honored for a task-parented KR.
-const KR_AUTO_SOURCES = ['manual', 'tasks_done_count'];
+const KR_AUTO_SOURCES = [
+    'manual',
+    'tasks_done_count',
+    'record_sum',
+    'record_count',
+    'child_kr_sum',
+];
 const MILESTONE_STATUSES = ['pending', 'achieved', 'missed'];
 const HEALTH_VALUES = ['on_track', 'at_risk', 'off_track', 'no_data'];
 

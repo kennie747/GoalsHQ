@@ -18,8 +18,11 @@ const {
     GoalshqGoalSettings,
     GoalshqProjectSettings,
     GoalshqKeyResult,
+    GoalshqKeyResultEntry,
     GoalshqMilestone,
+    GoalshqMilestoneTask,
     GoalshqProgressSnapshot,
+    GoalshqRecord,
 } = require('../../models');
 const {
     DONE_STATUSES,
@@ -364,6 +367,51 @@ async function projectsByIds(userId, ids) {
     });
 }
 
+/* ------------------------------------------------------------- records */
+
+async function records(parentType, parentId) {
+    return GoalshqRecord.findAll({
+        where: { parent_type: parentType, parent_id: parentId },
+        order: [
+            ['record_date', 'DESC'],
+            ['id', 'DESC'],
+        ],
+    });
+}
+
+async function recordByUid(userId, uid) {
+    return GoalshqRecord.findOne({ where: { uid, user_id: userId } });
+}
+
+async function createRecord(data) {
+    return GoalshqRecord.create(data);
+}
+
+async function keyResultById(userId, id) {
+    return GoalshqKeyResult.findOne({ where: { id, user_id: userId } });
+}
+
+async function krEntries(keyResultId) {
+    return GoalshqKeyResultEntry.findAll({
+        where: { key_result_id: keyResultId },
+        order: [['entry_date', 'ASC']],
+    });
+}
+
+async function createKrEntry(data) {
+    return GoalshqKeyResultEntry.create(data);
+}
+
+async function childKeyResults(parentKrId) {
+    return GoalshqKeyResult.findAll({ where: { parent_kr_id: parentKrId } });
+}
+
+async function milestoneTaskLinks(milestoneId) {
+    return GoalshqMilestoneTask.findAll({
+        where: { milestone_id: milestoneId },
+    });
+}
+
 module.exports = {
     goalByUid,
     goalById,
@@ -399,4 +447,12 @@ module.exports = {
     projectsForGoalIds,
     taskCountsByGoalIds,
     projectsByIds,
+    records,
+    recordByUid,
+    createRecord,
+    keyResultById,
+    krEntries,
+    createKrEntry,
+    childKeyResults,
+    milestoneTaskLinks,
 };

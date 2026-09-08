@@ -386,6 +386,144 @@ const controller = {
             next(err);
         }
     },
+
+    /* --------------------------------------------------------- Part 2 */
+
+    async listRecords(req, res, next) {
+        try {
+            ensureEnabled();
+            const records = await service.listRecords(
+                requireUserId(req),
+                req.params.parentType,
+                req.params.uid
+            );
+            res.json({ records });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async createRecord(req, res, next) {
+        try {
+            ensureEnabled();
+            const record = await service.createRecord(
+                requireUserId(req),
+                req.params.parentType,
+                req.params.uid,
+                req.body || {}
+            );
+            res.status(201).json({ record });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async updateRecord(req, res, next) {
+        try {
+            ensureEnabled();
+            const record = await service.updateRecord(
+                requireUserId(req),
+                req.params.uid,
+                req.body || {}
+            );
+            res.json({ record });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async deleteRecord(req, res, next) {
+        try {
+            ensureEnabled();
+            await service.deleteRecord(requireUserId(req), req.params.uid);
+            res.status(204).send();
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async getKeyResult(req, res, next) {
+        try {
+            ensureEnabled();
+            const key_result = await service.getKeyResultDetail(
+                requireUserId(req),
+                req.params.uid
+            );
+            res.json({ key_result });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async listKrEntries(req, res, next) {
+        try {
+            ensureEnabled();
+            const entries = await service.listKrEntries(
+                requireUserId(req),
+                req.params.uid
+            );
+            res.json({ entries });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async createKrEntry(req, res, next) {
+        try {
+            ensureEnabled();
+            const entry = await service.createKrEntry(
+                requireUserId(req),
+                req.params.uid,
+                req.body || {}
+            );
+            res.status(201).json({ entry });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async propagateKeyResult(req, res, next) {
+        try {
+            ensureEnabled();
+            const key_result = await service.propagateKeyResult(
+                requireUserId(req),
+                req.params.uid,
+                req.body || {}
+            );
+            res.json({ key_result });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async setMilestoneTasks(req, res, next) {
+        try {
+            ensureEnabled();
+            const milestones = await service.setMilestoneTasks(
+                requireUserId(req),
+                req.params.uid,
+                (req.body && req.body.task_uids) || []
+            );
+            res.json({ milestones });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async getReport(req, res, next) {
+        try {
+            ensureEnabled();
+            const report = await service.getReport(
+                requireUserId(req),
+                req.params.parentType,
+                req.params.uid,
+                req.query || {}
+            );
+            res.json({ report });
+        } catch (err) {
+            next(err);
+        }
+    },
 };
 
 module.exports = controller;

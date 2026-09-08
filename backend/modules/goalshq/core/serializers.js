@@ -64,7 +64,7 @@ function serializeStrategy(strategy, extra = {}) {
     };
 }
 
-function serializeKeyResult(kr) {
+function serializeKeyResult(kr, extra = {}) {
     return {
         uid: kr.uid,
         parent_type: kr.parent_type,
@@ -72,14 +72,51 @@ function serializeKeyResult(kr) {
         unit: kr.unit,
         direction: kr.direction,
         auto_source: kr.auto_source,
+        is_rollup: kr.auto_source === 'child_kr_sum',
         baseline_value: num(kr.baseline_value),
         target_value: num(kr.target_value),
         current_value: num(kr.current_value),
         sort_order: kr.sort_order,
+        parent_kr_uid: null,
+        children: [],
+        coverage: null,
+        entries: [],
+        ...extra,
     };
 }
 
-function serializeMilestone(m) {
+function serializeKrEntry(e) {
+    return {
+        uid: e.uid,
+        entry_date: e.entry_date,
+        value: num(e.value),
+        note: e.note,
+        created_at: e.created_at,
+    };
+}
+
+function serializeRecord(r, { attachments = [] } = {}) {
+    return {
+        uid: r.uid,
+        parent_type: r.parent_type,
+        record_date: r.record_date,
+        title: r.title,
+        category: r.category,
+        amount: num(r.amount),
+        unit: r.unit,
+        status: r.status,
+        counts_toward_kr_id: r.counts_toward_kr_id,
+        evidence_url: r.evidence_url,
+        task_id: r.task_id,
+        note_id: r.note_id,
+        body: r.body,
+        attachments,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+    };
+}
+
+function serializeMilestone(m, { taskUids = [], autoKrUid = null } = {}) {
     return {
         uid: m.uid,
         parent_type: m.parent_type,
@@ -89,6 +126,11 @@ function serializeMilestone(m) {
         status: m.status,
         achieved_at: m.achieved_at,
         sort_order: m.sort_order,
+        completion_mode: m.completion_mode || 'all',
+        auto_kr_uid: autoKrUid,
+        auto_kr_threshold: num(m.auto_kr_threshold),
+        auto_achieved: !!m.auto_achieved,
+        task_uids: taskUids,
     };
 }
 
@@ -176,6 +218,8 @@ module.exports = {
     serializeSettings,
     serializeStrategy,
     serializeKeyResult,
+    serializeKrEntry,
+    serializeRecord,
     serializeMilestone,
     serializeSnapshot,
     serializeProjectRef,

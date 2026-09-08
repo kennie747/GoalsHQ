@@ -698,10 +698,30 @@ async function deleteKeyResult(userId, uid) {
 
 /* --------------------------------------------------------------- milestones */
 
+async function serializeMilestoneFull(userId, m) {
+    const { Task } = require('../../models');
+    const links = await repo.milestoneTaskLinks(m.id);
+    const tasks = links.length
+        ? await Task.findAll({
+              where: { id: links.map((l) => l.task_id) },
+              attributes: ['uid'],
+          })
+        : [];
+    let autoKrUid = null;
+    if (m.auto_kr_id) {
+        const kr = await repo.keyResultById(userId, m.auto_kr_id);
+        autoKrUid = kr ? kr.uid : null;
+    }
+    return s.serializeMilestone(m, {
+        taskUids: tasks.map((t) => t.uid),
+        autoKrUid,
+    });
+}
+
 async function listMilestones(userId, parentType, uid) {
     const parent = await resolveParent(userId, parentType, uid);
     const rows = await repo.milestones(parent.type, parent.id);
-    return rows.map(s.serializeMilestone);
+    return Promise.all(rows.map((m) => serializeMilestoneFull(userId, m)));
 }
 
 async function createMilestone(userId, parentType, uid, body) {
@@ -724,18 +744,18 @@ async function createMilestone(userId, parentType, uid, body) {
         achieved_at: status === 'achieved' ? new Date() : null,
         sort_order: Number(body.sort_order || 0),
     });
-    if (parent.goalId) {
-        await rollup.recomputeGoal(parent.goalId, { source: 'manual' });
-    }
-    return s.serializeMilestone(milestone);
+    await recomputeForParent(parent.type, parent.id, userId);
+    return serializeMilestoneFull(userId, milestone);
 }
 
 async function updateMilestone(userId, uid, body) {
     const milestone = await repo.milestoneByUid(userId, uid);
     if (!milestone) throw new NotFoundError('Milestone not found');
     v.assertEnum(body.status, v.MILESTONE_STATUSES, 'status');
+    v.assertEnum(body.completion_mode, ['all', 'any'], 'completion_mode');
     v.assertDate(body.target_date, 'target_date');
     v.assertNumber(body.target_value, 'target_value');
+    v.assertNumber(body.auto_kr_threshold, 'auto_kr_threshold');
 
     const updates = {};
     if (body.title !== undefined)
@@ -747,8 +767,25 @@ async function updateMilestone(userId, uid, body) {
             body.target_value == null ? null : Number(body.target_value);
     if (body.sort_order !== undefined)
         updates.sort_order = Number(body.sort_order);
+    if (body.completion_mode !== undefined)
+        updates.completion_mode = body.completion_mode;
+    if (body.auto_kr_threshold !== undefined)
+        updates.auto_kr_threshold =
+            body.auto_kr_threshold == null
+                ? null
+                : Number(body.auto_kr_threshold);
+    if (body.auto_kr_uid !== undefined) {
+        if (!body.auto_kr_uid) {
+            updates.auto_kr_id = null;
+        } else {
+            const kr = await repo.keyResultByUid(userId, body.auto_kr_uid);
+            if (!kr) throw new NotFoundError('Key result not found');
+            updates.auto_kr_id = kr.id;
+        }
+    }
     if (body.status !== undefined) {
         updates.status = body.status;
+        updates.auto_achieved = false;
         updates.achieved_at =
             body.status === 'achieved'
                 ? milestone.achieved_at || new Date()
@@ -761,7 +798,10 @@ async function updateMilestone(userId, uid, body) {
         milestone.parent_id,
         userId
     );
-    return s.serializeMilestone(await repo.milestoneByUid(userId, uid));
+    return serializeMilestoneFull(
+        userId,
+        await repo.milestoneByUid(userId, uid)
+    );
 }
 
 async function deleteMilestone(userId, uid) {
@@ -800,6 +840,18 @@ async function expandMilestone(userId, uid) {
     }
 
     const task = await Task.create(taskData);
+
+    // Auto-link the task so completing it closes this milestone.
+    const { GoalshqMilestoneTask } = require('../../models');
+    await GoalshqMilestoneTask.findOrCreate({
+        where: { milestone_id: milestone.id, task_id: task.id },
+        defaults: {
+            milestone_id: milestone.id,
+            task_id: task.id,
+            user_id: userId,
+        },
+    });
+
     return {
         uid: task.uid,
         name: task.name,
@@ -857,6 +909,328 @@ async function recomputeStrategy(userId, uid) {
     return getStrategy(userId, uid);
 }
 
+/* ============================================================ Part 2: records */
+
+const { GoalshqRecord, GoalshqKeyResult, Attachment } = require('../../models');
+const { getFileUrl } = require('../../utils/attachment-utils');
+const aggregate = require('./operations/aggregate');
+const report = require('./operations/report');
+
+async function attachmentsForRecord(recordId) {
+    const rows = await Attachment.findAll({
+        where: { parent_type: 'goalshq_record', parent_id: recordId },
+        order: [['created_at', 'ASC']],
+    });
+    return rows.map((a) => ({
+        uid: a.uid,
+        original_filename: a.original_filename,
+        mime_type: a.mime_type,
+        file_size: a.file_size,
+        file_url: getFileUrl(a.stored_filename, 'attachments'),
+    }));
+}
+
+async function serializeRecordFull(r) {
+    return s.serializeRecord(r, {
+        attachments: await attachmentsForRecord(r.id),
+    });
+}
+
+async function recomputeForParentType(parentType, parentId, userId) {
+    if (parentType === 'goal') {
+        return rollup.recomputeGoal(parentId, { source: 'manual' });
+    }
+    if (parentType === 'project') {
+        const { Project } = require('../../models');
+        return recomputeForProject(
+            await Project.findOne({
+                where: { id: parentId, user_id: userId },
+            })
+        );
+    }
+    return rollup.recomputeStrategy(parentId, { source: 'manual' });
+}
+
+async function listRecords(userId, parentType, uid) {
+    const parent = await resolveParent(userId, parentType, uid, [
+        'goal',
+        'strategy',
+        'project',
+    ]);
+    const rows = await repo.records(parent.type, parent.id);
+    return Promise.all(rows.map(serializeRecordFull));
+}
+
+async function resolveCountsTowardKr(userId, krUid) {
+    if (!krUid) return null;
+    const kr = await repo.keyResultByUid(userId, krUid);
+    if (!kr) throw new NotFoundError('Key result not found');
+    return kr.id;
+}
+
+async function createRecord(userId, parentType, uid, body) {
+    const parent = await resolveParent(userId, parentType, uid, [
+        'goal',
+        'strategy',
+        'project',
+    ]);
+    const title = v.requireNonEmptyString(body.title, 'title');
+    v.assertDate(body.record_date, 'record_date');
+    v.assertNumber(body.amount, 'amount');
+
+    let taskId = null;
+    if (body.task_uid) {
+        const task = await repo.taskByUid(userId, body.task_uid);
+        if (task) taskId = task.id;
+    }
+
+    const record = await repo.createRecord({
+        parent_type: parent.type,
+        parent_id: parent.id,
+        user_id: userId,
+        created_by: userId,
+        record_date: body.record_date || new Date().toISOString().slice(0, 10),
+        title,
+        category: body.category || null,
+        amount: body.amount == null ? null : Number(body.amount),
+        unit: body.unit || null,
+        status: body.status || null,
+        counts_toward_kr_id: await resolveCountsTowardKr(
+            userId,
+            body.counts_toward_kr_uid
+        ),
+        evidence_url: body.evidence_url || null,
+        task_id: taskId,
+        body: body.body || null,
+    });
+    await recomputeForParentType(parent.type, parent.id, userId);
+    return serializeRecordFull(record);
+}
+
+async function updateRecord(userId, uid, body) {
+    const record = await repo.recordByUid(userId, uid);
+    if (!record) throw new NotFoundError('Record not found');
+    v.assertDate(body.record_date, 'record_date');
+    v.assertNumber(body.amount, 'amount');
+    const updates = {};
+    for (const f of [
+        'title',
+        'category',
+        'unit',
+        'status',
+        'evidence_url',
+        'body',
+    ]) {
+        if (body[f] !== undefined) updates[f] = body[f] || null;
+    }
+    if (body.record_date !== undefined)
+        updates.record_date = body.record_date || record.record_date;
+    if (body.amount !== undefined)
+        updates.amount = body.amount == null ? null : Number(body.amount);
+    if (body.counts_toward_kr_uid !== undefined)
+        updates.counts_toward_kr_id = await resolveCountsTowardKr(
+            userId,
+            body.counts_toward_kr_uid
+        );
+    await record.update(updates);
+    await recomputeForParentType(record.parent_type, record.parent_id, userId);
+    return serializeRecordFull(await repo.recordByUid(userId, uid));
+}
+
+async function deleteRecord(userId, uid) {
+    const record = await repo.recordByUid(userId, uid);
+    if (!record) throw new NotFoundError('Record not found');
+    const { parent_type, parent_id } = record;
+    const files = await Attachment.findAll({
+        where: { parent_type: 'goalshq_record', parent_id: record.id },
+    });
+    const { deleteFileFromDisk } = require('../../utils/attachment-utils');
+    const path = require('path');
+    const { getConfig } = require('../../config/config');
+    for (const f of files) {
+        await deleteFileFromDisk(
+            path.join(getConfig().uploadPath, f.file_path)
+        );
+        await f.destroy();
+    }
+    await record.destroy();
+    await recomputeForParentType(parent_type, parent_id, userId);
+}
+
+/* --------------------------------------------------------- KR check-in entries */
+
+async function listKrEntries(userId, krUid) {
+    const kr = await repo.keyResultByUid(userId, krUid);
+    if (!kr) throw new NotFoundError('Key result not found');
+    return (await repo.krEntries(kr.id)).map(s.serializeKrEntry);
+}
+
+async function createKrEntry(userId, krUid, body) {
+    const kr = await repo.keyResultByUid(userId, krUid);
+    if (!kr) throw new NotFoundError('Key result not found');
+    v.assertNumber(body.value, 'value');
+    if (body.value === undefined || body.value === null) {
+        throw new ValidationError('value is required');
+    }
+    v.assertDate(body.entry_date, 'entry_date');
+    const entry = await repo.createKrEntry({
+        key_result_id: kr.id,
+        user_id: userId,
+        entry_date: body.entry_date || new Date().toISOString().slice(0, 10),
+        value: Number(body.value),
+        note: body.note || null,
+    });
+    // A manual KR follows its latest check-in.
+    if (kr.auto_source === 'manual') {
+        await kr.update({ current_value: Number(body.value) });
+    }
+    await recomputeForParent(kr.parent_type, kr.parent_id, userId);
+    return s.serializeKrEntry(entry);
+}
+
+/* ------------------------------------------------------------ KR propagation */
+
+async function propagateKeyResult(userId, krUid, body) {
+    const kr = await repo.keyResultByUid(userId, krUid);
+    if (!kr) throw new NotFoundError('Key result not found');
+    const nodes = Array.isArray(body.nodes) ? body.nodes : [];
+    if (nodes.length === 0) throw new ValidationError('nodes is required');
+
+    const existingChildKeys = new Set(
+        (await repo.childKeyResults(kr.id)).map(
+            (c) => `${c.parent_type}:${c.parent_id}`
+        )
+    );
+
+    let sortOrder = 0;
+    for (const node of nodes) {
+        const parent = await resolveParent(
+            userId,
+            node.parent_type,
+            node.parent_uid,
+            ['goal', 'strategy', 'project']
+        );
+        const key = `${parent.type}:${parent.id}`;
+        if (existingChildKeys.has(key)) continue;
+        // eslint-disable-next-line no-await-in-loop
+        await repo.createKeyResult({
+            parent_type: parent.type,
+            parent_id: parent.id,
+            user_id: userId,
+            name: kr.name,
+            unit: kr.unit,
+            direction: kr.direction,
+            auto_source: 'manual',
+            parent_kr_id: kr.id,
+            baseline_value: 0,
+            target_value: 0,
+            current_value: 0,
+            sort_order: sortOrder++,
+        });
+    }
+    // The parent KR now rolls its children up.
+    if (kr.auto_source !== 'child_kr_sum') {
+        await kr.update({ auto_source: 'child_kr_sum' });
+    }
+    await recomputeForParent(kr.parent_type, kr.parent_id, userId);
+    return getKeyResultDetail(userId, krUid);
+}
+
+async function getKeyResultDetail(userId, krUid) {
+    const kr = await repo.keyResultByUid(userId, krUid);
+    if (!kr) throw new NotFoundError('Key result not found');
+    const [children, entries, totals] = await Promise.all([
+        repo.childKeyResults(kr.id),
+        repo.krEntries(kr.id),
+        aggregate.recordTotalsByKr([kr.id]),
+    ]);
+    const parentKr = kr.parent_kr_id
+        ? await GoalshqKeyResult.findByPk(kr.parent_kr_id)
+        : null;
+    const childTargetSum = children.reduce(
+        (acc, c) => acc + Number(c.target_value || 0),
+        0
+    );
+    return s.serializeKeyResult(kr, {
+        parent_kr_uid: parentKr ? parentKr.uid : null,
+        children: children.map((c) => c.uid),
+        coverage:
+            kr.auto_source === 'child_kr_sum'
+                ? {
+                      child_target_sum: childTargetSum,
+                      target: Number(kr.target_value || 0),
+                      gap: Number(kr.target_value || 0) - childTargetSum,
+                  }
+                : null,
+        entries: entries.map(s.serializeKrEntry),
+        record_totals: totals.get(kr.id) || { sum: 0, count: 0 },
+    });
+}
+
+/* --------------------------------------------------------- milestone triggers */
+
+async function setMilestoneTasks(userId, milestoneUid, taskUids) {
+    const milestone = await repo.milestoneByUid(userId, milestoneUid);
+    if (!milestone) throw new NotFoundError('Milestone not found');
+    const { GoalshqMilestoneTask } = require('../../models');
+    const wanted = new Set();
+    for (const uid of taskUids || []) {
+        // eslint-disable-next-line no-await-in-loop
+        const task = await repo.taskByUid(userId, uid);
+        if (task) wanted.add(task.id);
+    }
+    const current = new Set(
+        (await repo.milestoneTaskLinks(milestone.id)).map((l) => l.task_id)
+    );
+    for (const tid of wanted) {
+        if (!current.has(tid))
+            // eslint-disable-next-line no-await-in-loop
+            await GoalshqMilestoneTask.create({
+                milestone_id: milestone.id,
+                task_id: tid,
+                user_id: userId,
+            });
+    }
+    for (const tid of current) {
+        if (!wanted.has(tid))
+            // eslint-disable-next-line no-await-in-loop
+            await GoalshqMilestoneTask.destroy({
+                where: { milestone_id: milestone.id, task_id: tid },
+            });
+    }
+    await recomputeForParent(
+        milestone.parent_type,
+        milestone.parent_id,
+        userId
+    );
+    return listMilestones(
+        userId,
+        milestone.parent_type,
+        await parentUidFor(milestone.parent_type, milestone.parent_id)
+    );
+}
+
+async function parentUidFor(parentType, parentId) {
+    const { Goal, Project } = require('../../models');
+    if (parentType === 'goal') return (await Goal.findByPk(parentId)).uid;
+    if (parentType === 'project') return (await Project.findByPk(parentId)).uid;
+    return (await GoalshqStrategy.findByPk(parentId)).uid;
+}
+
+/* ------------------------------------------------------------------ report */
+
+async function getReport(userId, parentType, uid, query = {}) {
+    const parent = await resolveParent(userId, parentType, uid, [
+        'goal',
+        'strategy',
+        'project',
+    ]);
+    return report.assemble(userId, parent.type, parent.id, {
+        period: query.period,
+        withNarrative: query.narrative !== 'false',
+    });
+}
+
 module.exports = {
     isEnabled,
     listGoals,
@@ -885,4 +1259,15 @@ module.exports = {
     expandMilestone,
     recomputeGoal,
     recomputeStrategy,
+    // Part 2
+    listRecords,
+    createRecord,
+    updateRecord,
+    deleteRecord,
+    listKrEntries,
+    createKrEntry,
+    propagateKeyResult,
+    getKeyResultDetail,
+    setMilestoneTasks,
+    getReport,
 };

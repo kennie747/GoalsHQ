@@ -32,6 +32,7 @@ const {
     GoalshqProjectSettings,
     GoalshqKeyResult,
     GoalshqMilestone,
+    GoalshqMilestoneTask,
     GoalshqProgressSnapshot,
 } = require('../../../models');
 const logService = require('../../../services/logService');
@@ -41,6 +42,7 @@ const {
 } = require('../../../utils/timezone-utils');
 const { DONE_STATUSES, EXCLUDED_STATUSES } = require('./task-status');
 const math = require('./progress-math');
+const aggregate = require('./aggregate');
 
 /** Current calendar date (YYYY-MM-DD) in the user's timezone. */
 function todayInUserTz(user) {
@@ -105,6 +107,110 @@ function applyAutoSource(keyResults, doneCount, changed) {
         kr.current_value = doneCount;
         changed.push({ id: kr.id, current_value: doneCount });
     }
+}
+
+/**
+ * Recompute `current_value` for every KR in `allKrs` (model instances), in
+ * topological order (leaves before `child_kr_sum` rollups). Mutates in place so
+ * this pass's outcome computation sees fresh values; returns the changed set
+ * for a batched persist.
+ *
+ * @param {object[]} allKrs
+ * @param {Map<number,number>} doneCountByKrId  scope done-task count per KR
+ * @param {Map<number,{sum:number,count:number}>} recordTotals
+ */
+function refreshKeyResults(allKrs, doneCountByKrId, recordTotals) {
+    const byId = new Map(allKrs.map((kr) => [kr.id, kr]));
+    const changed = [];
+    const done = new Set();
+
+    const resolve = (kr, guard) => {
+        if (done.has(kr.id)) return;
+        if (guard.has(kr.id)) {
+            // cycle — treat as a leaf, leave value untouched
+            done.add(kr.id);
+            return;
+        }
+        guard.add(kr.id);
+
+        let next = kr.current_value;
+        switch (kr.auto_source) {
+            case 'tasks_done_count':
+                next = doneCountByKrId.get(kr.id) ?? 0;
+                break;
+            case 'record_sum':
+                next = recordTotals.get(kr.id)?.sum ?? 0;
+                break;
+            case 'record_count':
+                next = recordTotals.get(kr.id)?.count ?? 0;
+                break;
+            case 'child_kr_sum': {
+                const children = allKrs.filter((c) => c.parent_kr_id === kr.id);
+                for (const c of children) resolve(c, guard);
+                next = children.reduce(
+                    (acc, c) => acc + Number(c.current_value || 0),
+                    0
+                );
+                break;
+            }
+            default: // manual
+                break;
+        }
+        guard.delete(kr.id);
+        done.add(kr.id);
+        if (Number(next) !== Number(kr.current_value)) {
+            kr.current_value = Number(next);
+            changed.push({ id: kr.id, current_value: Number(next) });
+        }
+    };
+
+    for (const kr of allKrs) resolve(kr, new Set());
+    void byId;
+    return changed;
+}
+
+/**
+ * Auto-flip `pending` milestones to `achieved` when their linked tasks satisfy
+ * `completion_mode` ('all'/'any') or a linked KR crosses its threshold.
+ * @returns {number[]} ids of milestones that were flipped
+ */
+function evaluateMilestoneTriggers(
+    milestones,
+    taskLinksByMilestone,
+    doneTaskIds,
+    krById
+) {
+    const achieved = [];
+    for (const m of milestones) {
+        if (m.status !== 'pending') continue;
+        let hit = false;
+
+        const links = taskLinksByMilestone.get(m.id) || [];
+        if (links.length > 0) {
+            const doneCount = links.filter((tid) =>
+                doneTaskIds.has(tid)
+            ).length;
+            hit =
+                (m.completion_mode === 'any' && doneCount >= 1) ||
+                (m.completion_mode !== 'any' && doneCount === links.length);
+        }
+
+        if (!hit && m.auto_kr_id) {
+            const kr = krById.get(m.auto_kr_id);
+            if (kr) {
+                const threshold =
+                    m.auto_kr_threshold != null
+                        ? m.auto_kr_threshold
+                        : m.target_value != null
+                          ? m.target_value
+                          : kr.target_value;
+                if (Number(kr.current_value) >= Number(threshold)) hit = true;
+            }
+        }
+
+        if (hit) achieved.push(m.id);
+    }
+    return achieved;
 }
 
 /** Rank healths so we can take the "worst" of a set. */
@@ -388,6 +494,8 @@ async function recomputeGoal(goalId, opts = {}) {
             }),
             keyResultsFor('strategy', strategyIds),
         ]);
+        const msByStrategy = await milestonesFor('strategy', strategyIds);
+        const strategyMs = [...msByStrategy.values()].flat();
 
         const projectRowById = new Map(projectRows.map((p) => [p.id, p]));
         const settingsByProject = new Map(
@@ -402,6 +510,91 @@ async function recomputeGoal(goalId, opts = {}) {
                 settingsByProject.set(row.project_id, row);
         }
 
+        // --- refresh every KR in scope (auto_source + KR tree) ---------------
+        const projectKrs = [...krByProject.values()].flat();
+        const strategyKrs = [...krByStrategy.values()].flat();
+        const allKrs = [...goalKrs, ...projectKrs, ...strategyKrs];
+        const doneCountByKrId = new Map();
+        const goalDoneCount =
+            goalProjectIds.reduce(
+                (acc, pid) => acc + countDoneRows(byProject.get(pid)),
+                0
+            ) + countDoneRows(directRows);
+        for (const kr of goalKrs) doneCountByKrId.set(kr.id, goalDoneCount);
+        for (const sid of strategyIds) {
+            const pids = linkedByStrategy.get(sid) || [];
+            const d = pids.reduce(
+                (acc, pid) => acc + countDoneRows(byProject.get(pid)),
+                0
+            );
+            for (const kr of krByStrategy.get(sid) || [])
+                doneCountByKrId.set(kr.id, d);
+        }
+        for (const pid of allProjectIds) {
+            const d = countDoneRows(byProject.get(pid));
+            for (const kr of krByProject.get(pid) || [])
+                doneCountByKrId.set(kr.id, d);
+        }
+        const recordTotals = await aggregate.recordTotalsByKr(
+            allKrs.map((k) => k.id)
+        );
+        const autoKrUpdates = refreshKeyResults(
+            allKrs,
+            doneCountByKrId,
+            recordTotals
+        );
+
+        // --- milestone auto-achieve (task links / KR threshold) -------------
+        // Runs before the outcome calc so a just-achieved milestone counts.
+        const allMilestones = [
+            ...goalMilestones,
+            ...[...msByProject.values()].flat(),
+            ...strategyMs,
+        ];
+        const pendingMs = allMilestones.filter((m) => m.status === 'pending');
+        let milestoneAchievedIds = [];
+        if (pendingMs.length > 0) {
+            const links = await GoalshqMilestoneTask.findAll({
+                where: {
+                    milestone_id: { [Op.in]: pendingMs.map((m) => m.id) },
+                },
+            });
+            const taskLinksByMilestone = new Map();
+            for (const l of links) {
+                const list = taskLinksByMilestone.get(l.milestone_id) || [];
+                list.push(l.task_id);
+                taskLinksByMilestone.set(l.milestone_id, list);
+            }
+            const linkedTaskIds = [...new Set(links.map((l) => l.task_id))];
+            const doneTaskIds = new Set();
+            if (linkedTaskIds.length > 0) {
+                const rows = await Task.findAll({
+                    where: { id: { [Op.in]: linkedTaskIds } },
+                    attributes: ['id', 'status'],
+                    raw: true,
+                });
+                for (const r of rows) {
+                    if (DONE_STATUSES.includes(Number(r.status)))
+                        doneTaskIds.add(r.id);
+                }
+            }
+            const krById = new Map(allKrs.map((k) => [k.id, k]));
+            milestoneAchievedIds = evaluateMilestoneTriggers(
+                pendingMs,
+                taskLinksByMilestone,
+                doneTaskIds,
+                krById
+            );
+            const achievedNow = new Date();
+            for (const m of allMilestones) {
+                if (milestoneAchievedIds.includes(m.id)) {
+                    m.status = 'achieved';
+                    m.achieved_at = achievedNow;
+                    m.auto_achieved = true;
+                }
+            }
+        }
+
         const projectResults = computeProjects({
             projectIds: allProjectIds,
             projectRowById,
@@ -411,30 +604,6 @@ async function recomputeGoal(goalId, opts = {}) {
             msByProject,
             today,
         });
-
-        // --- KR auto-source (tasks_done_count) --------------------------------
-        const autoKrUpdates = [];
-        const goalDoneCount =
-            goalProjectIds.reduce(
-                (acc, pid) => acc + countDoneRows(byProject.get(pid)),
-                0
-            ) + countDoneRows(directRows);
-        applyAutoSource(goalKrs, goalDoneCount, autoKrUpdates);
-        for (const sid of strategyIds) {
-            const pids = linkedByStrategy.get(sid) || [];
-            const done = pids.reduce(
-                (acc, pid) => acc + countDoneRows(byProject.get(pid)),
-                0
-            );
-            applyAutoSource(krByStrategy.get(sid) || [], done, autoKrUpdates);
-        }
-        for (const pid of allProjectIds) {
-            applyAutoSource(
-                krByProject.get(pid) || [],
-                countDoneRows(byProject.get(pid)),
-                autoKrUpdates
-            );
-        }
 
         // --- goal execution % ------------------------------------------------
         const goalStart = settings.start_date || goal.created_at;
@@ -625,6 +794,20 @@ async function recomputeGoal(goalId, opts = {}) {
                     { where: { id: u.id }, transaction }
                 );
             }
+
+            if (milestoneAchievedIds.length > 0) {
+                await GoalshqMilestone.update(
+                    {
+                        status: 'achieved',
+                        achieved_at: new Date(),
+                        auto_achieved: true,
+                    },
+                    {
+                        where: { id: { [Op.in]: milestoneAchievedIds } },
+                        transaction,
+                    }
+                );
+            }
         });
 
         logService.logInfo(
@@ -708,7 +891,13 @@ async function recomputeStrategy(strategyId, opts = {}) {
             );
             doneCount += countDoneRows(byProject.get(pid));
         }
-        applyAutoSource(krs, doneCount, autoKrUpdates);
+        {
+            const totals = await aggregate.recordTotalsByKr(
+                krs.map((k) => k.id)
+            );
+            const dc = new Map(krs.map((k) => [k.id, doneCount]));
+            autoKrUpdates.push(...refreshKeyResults(krs, dc, totals));
+        }
 
         const percent = math.mean(execs);
         const health = worstHealth(healths);
@@ -792,7 +981,13 @@ async function recomputeProject(projectId, opts = {}) {
         const doneCount = countDoneRows(byProject.get(projectId));
 
         const autoKrUpdates = [];
-        applyAutoSource(krs, doneCount, autoKrUpdates);
+        {
+            const totals = await aggregate.recordTotalsByKr(
+                krs.map((k) => k.id)
+            );
+            const dc = new Map(krs.map((k) => [k.id, doneCount]));
+            autoKrUpdates.push(...refreshKeyResults(krs, dc, totals));
+        }
 
         const execution =
             settings.manual_percent != null
