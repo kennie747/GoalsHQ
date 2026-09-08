@@ -53,14 +53,13 @@ describe('AI Assistant - GoalsHQ Strategy/KR context (Phase E)', () => {
         await GoalshqGoalSettings.create({
             goal_id: goal.id,
             user_id: user.id,
-            cached_health: 'on_track',
+            cached_execution_health: 'on_track',
         });
         const strategy = await GoalshqStrategy.create({
             goal_id: goal.id,
             user_id: user.id,
             name: 'Beta launch',
             status: 'active',
-            importance: 5,
             cached_percent: 42,
             cached_health: 'off_track',
         });
@@ -88,17 +87,18 @@ describe('AI Assistant - GoalsHQ Strategy/KR context (Phase E)', () => {
 
         const content = userMessageContent();
         expect(content).toContain('## Strategy & Key Results');
-        expect(content).toContain('"Beta launch"');
+        expect(content).toContain('Strategy "Beta launch"');
         expect(content).toContain('[off_track]');
+        expect(content).toContain('grouping');
         expect(content).toContain('→ Goal: "Ship the redesign"');
         expect(content).toContain('KR: Beta signups — 30/100 signups (30%)');
         expect(content).toContain('Milestone: Beta launched [pending]');
-        // The Goal itself also gets its own cached health inline.
+        // The Goal itself also gets its own cached execution health inline.
         expect(content).toContain('"Ship the redesign"');
-        expect(content).toContain('[on_track]');
+        expect(content).toContain('exec on_track');
     });
 
-    it('caps the Strategy & Key Results section to the top 8, risk-first then importance', async () => {
+    it('caps the Strategy & Key Results section to the top 8, risk-first', async () => {
         const goal = await Goal.create({
             user_id: user.id,
             title: 'Many strategies goal',
@@ -111,8 +111,8 @@ describe('AI Assistant - GoalsHQ Strategy/KR context (Phase E)', () => {
                 user_id: user.id,
                 name: `Strategy ${i}`,
                 status: 'active',
-                importance: i,
-                cached_health: 'on_track',
+                // 8 & 9 are at risk → surface ahead of the on_track ones.
+                cached_health: i >= 8 ? 'off_track' : 'on_track',
             });
         }
 
@@ -120,12 +120,10 @@ describe('AI Assistant - GoalsHQ Strategy/KR context (Phase E)', () => {
 
         const content = userMessageContent();
         expect(content).toContain('## Strategy & Key Results (top 8)');
-        // Highest-importance strategies (9, 8, ... down to 2) should be kept;
-        // the two lowest-importance ones (0, 1) should be dropped.
+        // The at-risk ones (8, 9) are kept; the last two on_track ones drop off.
+        expect(content).toContain('"Strategy 8"');
         expect(content).toContain('"Strategy 9"');
-        expect(content).toContain('"Strategy 2"');
-        expect(content).not.toContain('"Strategy 0"');
-        expect(content).not.toContain('"Strategy 1"');
+        expect(content).not.toContain('"Strategy 7"');
     });
 
     it('omits the Strategy & Key Results section when GoalsHQ is disabled', async () => {
