@@ -20,7 +20,10 @@ import {
     createKrEntry,
     propagateKeyResult,
     fetchKeyResultDetail,
+    setMilestoneTasks,
 } from '../../utils/goalsHqService';
+import { fetchTasks } from '../../utils/tasksService';
+import { Task } from '../../entities/Task';
 
 export interface PropagateTarget {
     parent_type: 'goal' | 'strategy' | 'project';
@@ -168,6 +171,28 @@ const MetricsPanels: React.FC<Props> = ({
     };
 
     const [triggerMsUid, setTriggerMsUid] = useState<string | null>(null);
+    const [projectTasks, setProjectTasks] = useState<Task[] | null>(null);
+
+    const openTrigger = async (m: Milestone) => {
+        const next = triggerMsUid === m.uid ? null : m.uid;
+        setTriggerMsUid(next);
+        if (next && parentType === 'project' && projectTasks === null) {
+            try {
+                const res = await fetchTasks(`?project_uid=${parentUid}`);
+                setProjectTasks(res.tasks || []);
+            } catch {
+                setProjectTasks([]);
+            }
+        }
+    };
+
+    const toggleMsTask = async (m: Milestone, taskUid: string) => {
+        const current = new Set(m.task_uids || []);
+        if (current.has(taskUid)) current.delete(taskUid);
+        else current.add(taskUid);
+        await setMilestoneTasks(m.uid, Array.from(current));
+        onChange();
+    };
     const [deleting, setDeleting] = useState<{
         kind: 'kr' | 'milestone';
         uid: string;
@@ -492,13 +517,7 @@ const MetricsPanels: React.FC<Props> = ({
                                 )}
                                 {!readOnly && (
                                     <button
-                                        onClick={() =>
-                                            setTriggerMsUid(
-                                                triggerMsUid === m.uid
-                                                    ? null
-                                                    : m.uid
-                                            )
-                                        }
+                                        onClick={() => openTrigger(m)}
                                         className="text-xs text-gray-400 hover:text-blue-500"
                                         title={t(
                                             'goalshq.autoAchieve',
@@ -632,6 +651,66 @@ const MetricsPanels: React.FC<Props> = ({
                                             className={`${inputCls} w-24`}
                                         />
                                     </div>
+                                    {parentType === 'project' && (
+                                        <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-600">
+                                            <div className="mb-1 text-gray-500">
+                                                {t(
+                                                    'goalshq.linkTasks',
+                                                    'Link existing tasks:'
+                                                )}
+                                            </div>
+                                            {projectTasks === null ? (
+                                                <div className="text-gray-400">
+                                                    {t(
+                                                        'common.loading',
+                                                        'Loading...'
+                                                    )}
+                                                </div>
+                                            ) : projectTasks.length === 0 ? (
+                                                <div className="text-gray-400">
+                                                    {t(
+                                                        'goalshq.noProjectTasks',
+                                                        'This project has no tasks.'
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="max-h-40 space-y-1 overflow-y-auto">
+                                                    {projectTasks.map((tk) => (
+                                                        <label
+                                                            key={tk.uid}
+                                                            className="flex items-center gap-2"
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={(
+                                                                    m.task_uids ||
+                                                                    []
+                                                                ).includes(
+                                                                    tk.uid!
+                                                                )}
+                                                                onChange={() =>
+                                                                    toggleMsTask(
+                                                                        m,
+                                                                        tk.uid!
+                                                                    )
+                                                                }
+                                                            />
+                                                            <span
+                                                                className={
+                                                                    tk.status ===
+                                                                    'done'
+                                                                        ? 'text-gray-400 line-through'
+                                                                        : ''
+                                                                }
+                                                            >
+                                                                {tk.name}
+                                                            </span>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </li>
                             )}
                         </React.Fragment>

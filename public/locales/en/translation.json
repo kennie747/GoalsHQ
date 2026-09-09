@@ -150,7 +150,9 @@
     "achieved": "achieved",
     "deleteStrategyExtra": "Its Key Results and Milestones are deleted too; linked projects are kept.",
     "deleteRecordExtra": "Any evidence files attached to it are deleted too.",
-    "deleteKrExtra": "Its check-in history and any child KRs go too."
+    "deleteKrExtra": "Its check-in history and any child KRs go too.",
+    "linkTasks": "Link existing tasks:",
+    "noProjectTasks": "This project has no tasks."
   },
   "common": {
     "save": "Save",
