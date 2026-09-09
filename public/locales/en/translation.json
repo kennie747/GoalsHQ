@@ -147,7 +147,10 @@
     "logResult": "Log result",
     "resultLogged": "Result logged",
     "value": "Value",
-    "achieved": "achieved"
+    "achieved": "achieved",
+    "deleteStrategyExtra": "Its Key Results and Milestones are deleted too; linked projects are kept.",
+    "deleteRecordExtra": "Any evidence files attached to it are deleted too.",
+    "deleteKrExtra": "Its check-in history and any child KRs go too."
   },
   "common": {
     "save": "Save",
@@ -181,7 +184,10 @@
     "exitFocusMode": "Exit focus mode",
     "searchTimezones": "Search timezones...",
     "dismiss": "Dismiss",
-    "skip": "Skip"
+    "skip": "Skip",
+    "deleteTitle": "Delete {{item}}",
+    "deleteConfirmIrreversible": "Permanently delete \"{{item}}\"? This cannot be undone.",
+    "deletePermanently": "Delete"
   },
   "sidebar": {
     "dashboard": "Dashboard",

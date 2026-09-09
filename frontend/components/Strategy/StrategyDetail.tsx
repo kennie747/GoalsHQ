@@ -4,10 +4,17 @@ import { useTranslation } from 'react-i18next';
 import {
     ArrowLeftIcon,
     PencilSquareIcon,
+    TrashIcon,
     XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { Strategy } from '../../entities/Strategy';
-import { fetchStrategy, setStrategyProjects } from '../../utils/goalsHqService';
+import {
+    fetchStrategy,
+    setStrategyProjects,
+    deleteStrategy,
+} from '../../utils/goalsHqService';
+import DeleteConfirmDialog from '../Shared/DeleteConfirmDialog';
+import { useToast } from '../Shared/ToastContext';
 import {
     extractUidFromSlug,
     createProjectUrl,
@@ -39,9 +46,11 @@ const StrategyDetail: React.FC = () => {
     const isNew = uidSlug === 'new';
     const uid = extractUidFromSlug(uidSlug || '');
 
+    const { showSuccessToast, showErrorToast } = useToast();
     const [strategy, setStrategy] = useState<Strategy | null>(null);
     const [error, setError] = useState(false);
     const [editing, setEditing] = useState(isNew);
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
     const [tab, setTab] = useState<'overview' | 'records' | 'report'>(
         'overview'
     );
@@ -165,15 +174,52 @@ const StrategyDetail: React.FC = () => {
                         )}
                     </p>
                 </div>
-                <button
-                    type="button"
-                    onClick={() => setEditing(true)}
-                    className="inline-flex flex-shrink-0 items-center gap-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
-                >
-                    <PencilSquareIcon className="h-4 w-4" />
-                    {t('common.edit', 'Edit')}
-                </button>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setEditing(true)}
+                        className="inline-flex items-center gap-1 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                    >
+                        <PencilSquareIcon className="h-4 w-4" />
+                        {t('common.edit', 'Edit')}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setConfirmingDelete(true)}
+                        aria-label={t('common.delete', 'Delete')}
+                        title={t('common.delete', 'Delete')}
+                        className="inline-flex items-center rounded-md border border-red-300 p-2 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+                    >
+                        <TrashIcon className="h-4 w-4" />
+                    </button>
+                </div>
             </div>
+
+            {confirmingDelete && (
+                <DeleteConfirmDialog
+                    itemLabel={strategy.name}
+                    extra={t(
+                        'goalshq.deleteStrategyExtra',
+                        'Its Key Results and Milestones are deleted too; linked projects are kept.'
+                    )}
+                    onCancel={() => setConfirmingDelete(false)}
+                    onConfirm={async () => {
+                        try {
+                            await deleteStrategy(strategy.uid);
+                            showSuccessToast(
+                                t(
+                                    'goalshq.strategyDeleted',
+                                    'Strategy deleted'
+                                )
+                            );
+                            navigate('/strategy');
+                        } catch (e) {
+                            showErrorToast((e as Error).message);
+                            setConfirmingDelete(false);
+                        }
+                    }}
+                />
+            )}
 
             {/* Tabs */}
             <div className="mb-4 flex gap-1 border-b border-gray-200 dark:border-gray-700">

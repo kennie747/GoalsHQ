@@ -21,6 +21,7 @@ import {
     getDownloadUrl,
 } from '../../utils/attachmentsService';
 import { useToast } from '../Shared/ToastContext';
+import DeleteConfirmDialog from '../Shared/DeleteConfirmDialog';
 
 interface Props {
     parentType: 'goal' | 'strategy' | 'project';
@@ -52,6 +53,7 @@ const RecordsPanel: React.FC<Props> = ({
     const [busy, setBusy] = useState(false);
     const [draft, setDraft] = useState<RecordInput>({ record_date: today() });
     const [files, setFiles] = useState<File[]>([]);
+    const [deleting, setDeleting] = useState<GoalshqRecord | null>(null);
 
     const load = useCallback(async () => {
         try {
@@ -94,6 +96,25 @@ const RecordsPanel: React.FC<Props> = ({
 
     return (
         <div>
+            {deleting && (
+                <DeleteConfirmDialog
+                    itemLabel={deleting.title}
+                    extra={t(
+                        'goalshq.deleteRecordExtra',
+                        'Any evidence files attached to it are deleted too.'
+                    )}
+                    onCancel={() => setDeleting(null)}
+                    onConfirm={async () => {
+                        try {
+                            await deleteRecord(deleting.uid);
+                        } catch (e) {
+                            showErrorToast((e as Error).message);
+                        }
+                        setDeleting(null);
+                        load();
+                    }}
+                />
+            )}
             <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                     {t('goalshq.records', 'Records')}
@@ -367,10 +388,7 @@ const RecordsPanel: React.FC<Props> = ({
                                     )}
                                     <td className="py-1.5">
                                         <button
-                                            onClick={async () => {
-                                                await deleteRecord(r.uid);
-                                                load();
-                                            }}
+                                            onClick={() => setDeleting(r)}
                                             className="text-gray-400 hover:text-red-500"
                                         >
                                             <TrashIcon className="h-4 w-4" />

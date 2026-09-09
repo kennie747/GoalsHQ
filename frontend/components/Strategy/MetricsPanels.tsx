@@ -8,6 +8,7 @@ import {
     KeyResultAutoSource,
 } from '../../entities/KeyResult';
 import { Milestone } from '../../entities/Milestone';
+import DeleteConfirmDialog from '../Shared/DeleteConfirmDialog';
 import {
     createKeyResult,
     updateKeyResult,
@@ -167,6 +168,19 @@ const MetricsPanels: React.FC<Props> = ({
     };
 
     const [triggerMsUid, setTriggerMsUid] = useState<string | null>(null);
+    const [deleting, setDeleting] = useState<{
+        kind: 'kr' | 'milestone';
+        uid: string;
+        label: string;
+    } | null>(null);
+
+    const confirmDelete = async () => {
+        if (!deleting) return;
+        if (deleting.kind === 'kr') await deleteKeyResult(deleting.uid);
+        else await deleteMilestone(deleting.uid);
+        setDeleting(null);
+        onChange();
+    };
 
     const toggleMs = async (m: Milestone) => {
         await updateMilestone(m.uid, {
@@ -182,6 +196,21 @@ const MetricsPanels: React.FC<Props> = ({
 
     return (
         <div className="grid gap-6 md:grid-cols-2">
+            {deleting && (
+                <DeleteConfirmDialog
+                    itemLabel={deleting.label}
+                    extra={
+                        deleting.kind === 'kr'
+                            ? t(
+                                  'goalshq.deleteKrExtra',
+                                  'Its check-in history and any child KRs go too.'
+                              )
+                            : undefined
+                    }
+                    onCancel={() => setDeleting(null)}
+                    onConfirm={confirmDelete}
+                />
+            )}
             {/* Key results */}
             <section>
                 <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -274,10 +303,13 @@ const MetricsPanels: React.FC<Props> = ({
                             {!readOnly && (
                                 <button
                                     aria-label={t('common.delete', 'Delete')}
-                                    onClick={async () => {
-                                        await deleteKeyResult(kr.uid);
-                                        onChange();
-                                    }}
+                                    onClick={() =>
+                                        setDeleting({
+                                            kind: 'kr',
+                                            uid: kr.uid,
+                                            label: kr.name,
+                                        })
+                                    }
                                     className="text-gray-400 hover:text-red-500"
                                 >
                                     <TrashIcon className="h-4 w-4" />
@@ -501,10 +533,13 @@ const MetricsPanels: React.FC<Props> = ({
                                 )}
                                 <button
                                     aria-label={t('common.delete', 'Delete')}
-                                    onClick={async () => {
-                                        await deleteMilestone(m.uid);
-                                        onChange();
-                                    }}
+                                    onClick={() =>
+                                        setDeleting({
+                                            kind: 'milestone',
+                                            uid: m.uid,
+                                            label: m.title,
+                                        })
+                                    }
                                     className="text-gray-400 hover:text-red-500"
                                 >
                                     <TrashIcon className="h-4 w-4" />

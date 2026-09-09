@@ -20,6 +20,7 @@ import {
     fetchGoalshqGoals,
 } from '../../utils/goalsHqService';
 import { fetchProjects } from '../../utils/projectsService';
+import DeleteConfirmDialog from '../Shared/DeleteConfirmDialog';
 
 interface Props {
     isOpen: boolean;
@@ -142,6 +143,8 @@ const StrategyModal: React.FC<Props> = ({
         }
     };
 
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
+
     const handleDelete = async () => {
         if (!strategy) return;
         try {
@@ -151,6 +154,7 @@ const StrategyModal: React.FC<Props> = ({
             onClose();
         } catch (e) {
             showErrorToast((e as Error).message);
+            setConfirmingDelete(false);
         }
     };
 
@@ -159,6 +163,17 @@ const StrategyModal: React.FC<Props> = ({
 
     return (
         <div className="fixed inset-0 top-16 z-40 flex items-start justify-center overflow-y-auto bg-gray-900/70 p-4">
+            {confirmingDelete && strategy && (
+                <DeleteConfirmDialog
+                    itemLabel={strategy.name}
+                    extra={t(
+                        'goalshq.deleteStrategyExtra',
+                        'Its Key Results and Milestones are deleted too; linked projects are kept.'
+                    )}
+                    onCancel={() => setConfirmingDelete(false)}
+                    onConfirm={handleDelete}
+                />
+            )}
             <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-800">
                 <div className="border-b border-gray-200 px-4 pt-4 pb-3 dark:border-gray-700">
                     <input
@@ -359,7 +374,7 @@ const StrategyModal: React.FC<Props> = ({
                         {isEdit && onDeleted && (
                             <button
                                 type="button"
-                                onClick={handleDelete}
+                                onClick={() => setConfirmingDelete(true)}
                                 className="rounded-md border border-red-300 p-2 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
                                 title={t('common.delete', 'Delete')}
                             >
