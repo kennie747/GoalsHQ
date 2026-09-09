@@ -819,6 +819,9 @@ const GoalDetails: React.FC = () => {
                                             parentUid={goal.uid!}
                                             keyResults={goalHq.key_results}
                                             milestones={goalHq.milestones}
+                                            milestoneTaskProjectUids={goalHq.projects.map(
+                                                (p) => p.uid
+                                            )}
                                             propagateTargets={[
                                                 ...goalHq.strategies.map(
                                                     (s) => ({

@@ -895,6 +895,43 @@ async function recomputeForParent(parentType, parentId, userId) {
     return null;
 }
 
+/**
+ * Recompute the GoalsHQ rollup affected by a task whose completion status just
+ * changed — so `auto_source` Key Results and milestone auto-achieve triggers
+ * update immediately instead of waiting for the periodic sweep. Best-effort:
+ * never throws into the task request.
+ */
+async function recomputeForTask(task) {
+    if (!isEnabled() || !task) return null;
+    try {
+        const { Project } = require('../../models');
+        if (task.project_id) {
+            const project = await Project.findByPk(task.project_id);
+            if (project && project.goal_id) {
+                return rollup.recomputeGoal(project.goal_id, {
+                    source: 'task_completion',
+                });
+            }
+            if (project) {
+                return rollup.recomputeProject(project.id, {
+                    source: 'task_completion',
+                });
+            }
+        }
+        if (task.goal_id) {
+            return rollup.recomputeGoal(task.goal_id, {
+                source: 'task_completion',
+            });
+        }
+    } catch (err) {
+        require('../../services/logService').logError(
+            `[goalshq] recomputeForTask failed: ${err.message}`,
+            err
+        );
+    }
+    return null;
+}
+
 async function recomputeGoal(userId, uid) {
     const goal = await repo.goalByUid(userId, uid);
     if (!goal) throw new NotFoundError('Goal not found');
@@ -1265,6 +1302,7 @@ module.exports = {
     expandMilestone,
     recomputeGoal,
     recomputeStrategy,
+    recomputeForTask,
     // Part 2
     listRecords,
     createRecord,

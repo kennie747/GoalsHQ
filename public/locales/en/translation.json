@@ -152,7 +152,10 @@
     "deleteRecordExtra": "Any evidence files attached to it are deleted too.",
     "deleteKrExtra": "Its check-in history and any child KRs go too.",
     "linkTasks": "Link existing tasks:",
-    "noProjectTasks": "This project has no tasks."
+    "noProjectTasks": "This project has no tasks.",
+    "metrics": "Metrics",
+    "fromTasks": "from task completion",
+    "metricsUnavailable": "Metrics are unavailable."
   },
   "common": {
     "save": "Save",

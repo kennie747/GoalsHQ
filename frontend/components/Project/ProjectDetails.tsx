@@ -48,6 +48,7 @@ import BannerEditModal from './BannerEditModal';
 import ProjectShareModal from './ProjectShareModal';
 import ProjectTasksSection from './ProjectTasksSection';
 import ProjectNotesSection from './ProjectNotesSection';
+import ProjectGoalsHqPanel from './ProjectGoalsHqPanel';
 import { useProjectMetrics } from './useProjectMetrics';
 import { saveProjectAsTemplate } from '../../utils/templatesService';
 
@@ -61,6 +62,7 @@ const ProjectDetails: React.FC = () => {
     const { areasStore, projectsStore, userSettingsStore } = useStore();
     const areas = areasStore.areas;
     const templatesEnabled = userSettingsStore.templatesEnabled;
+    const goalshqEnabled = (userSettingsStore as any)?.goalshqEnabled;
     const [allProjects, setAllProjects] = useState<Project[]>([]);
     const [project, setProject] = useState<Project | null>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -73,7 +75,9 @@ const ProjectDetails: React.FC = () => {
     const [selectedNote, setSelectedNote] = useState<Note | null>(null);
     const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
     const [isBannerEditModalOpen, setIsBannerEditModalOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState<'tasks' | 'notes'>('tasks');
+    const [activeTab, setActiveTab] = useState<'tasks' | 'notes' | 'metrics'>(
+        'tasks'
+    );
     const [taskStatusFilter, setTaskStatusFilter] = useState<
         'all' | 'active' | 'completed'
     >(() => {
@@ -914,6 +918,20 @@ const ProjectDetails: React.FC = () => {
                                         </span>
                                     )}
                                 </button>
+                                {goalshqEnabled && (
+                                    <button
+                                        onClick={() => setActiveTab('metrics')}
+                                        className={`flex items-center space-x-1 sm:space-x-2 text-xs sm:text-sm font-medium transition-colors ${
+                                            activeTab === 'metrics'
+                                                ? 'text-gray-900 dark:text-gray-100'
+                                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                                        }`}
+                                    >
+                                        <span>
+                                            {t('goalshq.metrics', 'Metrics')}
+                                        </span>
+                                    </button>
+                                )}
                             </div>
 
                             {activeTab === 'tasks' && (
@@ -1138,6 +1156,12 @@ const ProjectDetails: React.FC = () => {
                                 </div>
                             </div>
                         </>
+                    )}
+
+                    {activeTab === 'metrics' && project && goalshqEnabled && (
+                        <div className="mt-2">
+                            <ProjectGoalsHqPanel projectUid={project.uid!} />
+                        </div>
                     )}
 
                     {activeTab === 'notes' && project && (

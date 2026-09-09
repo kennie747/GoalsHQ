@@ -853,6 +853,20 @@ router.patch('/task/:uid', requireTaskWriteAccess, async (req, res) => {
                 taskAttributes.status,
                 req.currentUser.id
             );
+
+            // GoalsHQ: a completion-status change can satisfy an auto_source
+            // Key Result or a milestone auto-achieve trigger — recompute now
+            // rather than waiting for the periodic sweep. Best-effort.
+            if (oldStatus !== taskAttributes.status) {
+                try {
+                    await require('../goalshq/service').recomputeForTask(task);
+                } catch (goalshqErr) {
+                    logError(
+                        'GoalsHQ recompute after task status change failed:',
+                        goalshqErr
+                    );
+                }
+            }
         }
 
         if (recurringCompletionPayload) {

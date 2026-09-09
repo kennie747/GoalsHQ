@@ -174,6 +174,37 @@ describe('GoalsHQ Part 2 — records, KR trees, milestone triggers, report', () 
         expect(kept.auto_achieved).toBe(true);
     });
 
+    it('completing a linked task via PATCH /tasks auto-achieves the milestone with no explicit recompute', async () => {
+        const project = await Project.create({
+            user_id: user.id,
+            name: 'P-hook',
+            goal_id: goal.id,
+            status: 'in_progress',
+        });
+        const task = await Task.create({
+            user_id: user.id,
+            name: 'ship it',
+            project_id: project.id,
+            status: Task.STATUS.NOT_STARTED,
+        });
+        const ms = await agent
+            .post(`/api/goalshq/project/${project.uid}/milestones`)
+            .send({ title: 'shipped', completion_mode: 'any' });
+        const msUid = ms.body.milestone.uid;
+        await agent
+            .put(`/api/goalshq/milestones/${msUid}/tasks`)
+            .send({ task_uids: [task.uid] });
+
+        await agent
+            .patch(`/api/task/${task.uid}`)
+            .send({ status: 'done' })
+            .expect(200);
+
+        const kept = await GoalshqMilestone.findOne({ where: { uid: msUid } });
+        expect(kept.status).toBe('achieved');
+        expect(kept.auto_achieved).toBe(true);
+    });
+
     it('milestone auto-achieves when a KR crosses its threshold', async () => {
         const kr = await agent
             .post(`/api/goalshq/goal/${goal.uid}/key-results`)

@@ -49,6 +49,28 @@ export const updateGoalSettings = async (
     return data.settings;
 };
 
+export const updateGoalshqProjectSettings = async (
+    uid: string,
+    settingsData: { metrics_enabled?: boolean; manual_percent?: number | null }
+): Promise<any> => {
+    const token = await getCsrfToken();
+    const response = await fetch(
+        getApiPath(`goalshq/projects/${uid}/settings`),
+        {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'x-csrf-token': token,
+            },
+            body: JSON.stringify(settingsData),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to update project settings.');
+    return (await response.json()).settings;
+};
+
 export const recomputeGoal = async (uid: string): Promise<GoalDetail> => {
     const token = await getCsrfToken();
     const response = await fetch(getApiPath(`goalshq/goals/${uid}/recompute`), {

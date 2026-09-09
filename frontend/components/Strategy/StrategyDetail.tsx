@@ -358,6 +358,9 @@ const StrategyDetail: React.FC = () => {
                             parentUid={uid}
                             keyResults={strategy.key_results || []}
                             milestones={strategy.milestones || []}
+                            milestoneTaskProjectUids={(
+                                strategy.projects || []
+                            ).map((p) => p.uid)}
                             readOnly={!strategy.metrics_editable}
                             propagateTargets={(strategy.projects || []).map(
                                 (p) => ({
