@@ -8,7 +8,7 @@
     "newStrategyNoGoals": "Create a goal first — a strategy always belongs to one.",
     "createStrategyError": "Could not create strategy.",
     "parentGoal": "Goal",
-    "addStrategy": "Add Strategy",
+    "addStrategy": "+ New strategy",
     "directProjects": "Direct projects",
     "linkedProjects": "Linked projects",
     "noLinkedProjects": "No projects linked yet.",
@@ -173,7 +173,12 @@
     "filterStatus": "Status",
     "searchTasks": "Search tasks…",
     "groupExpandAll": "Expand all",
-    "groupCollapseAll": "Collapse all"
+    "groupCollapseAll": "Collapse all",
+    "tab_goal": "Goal",
+    "progressTab_execution": "Execution",
+    "progressTab_strategies": "Strategies",
+    "progressTab_projects": "Projects",
+    "noStrategyGroup": "Directly on the goal"
   },
   "common": {
     "save": "Save",
@@ -210,7 +215,8 @@
     "skip": "Skip",
     "deleteTitle": "Delete {{item}}",
     "deleteConfirmIrreversible": "Permanently delete \"{{item}}\"? This cannot be undone.",
-    "deletePermanently": "Delete"
+    "deletePermanently": "Delete",
+    "toggle": "Toggle"
   },
   "sidebar": {
     "dashboard": "Dashboard",

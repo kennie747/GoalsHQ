@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoalsHQ — Goal detail page, tabbed layout mockup</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --panel:#ffffff; --panel-2:#fafbfc; --ink:#1f2430; --ink-soft:#5b6472;
+    --line:#e4e7ec; --line-2:#eef0f3; --accent:#2563eb; --accent-soft:#e8effd;
+    --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --muted:#8a93a2;
+    --bar-track:#e9ecf1; --shadow:0 10px 30px rgba(20,28,45,.14);
+    --chip-bg:#eef1f5; --chip-ink:#5b6472;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f131a; --panel:#161b23; --panel-2:#1b212b; --ink:#e6e9ef; --ink-soft:#a7b0be;
+    --line:#2a313c; --line-2:#222932; --accent:#5b9bff; --accent-soft:#1d2b44;
+    --ok:#4ade80; --warn:#f5b74e; --bad:#f87171; --muted:#6b7482;
+    --bar-track:#2a313c; --shadow:0 10px 30px rgba(0,0,0,.45);
+    --chip-bg:#242c37; --chip-ink:#a7b0be;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:1000px;margin:0 auto;padding:22px 24px 90px}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+  .topbar h1{font-size:16px;margin:0;font-weight:700}
+  .themebtn{border:1px solid var(--line);color:var(--ink-soft);border-radius:8px;padding:7px 11px;background:none;cursor:pointer;font:inherit}
+  .note{background:var(--panel-2);border:1px dashed var(--line);border-radius:8px;padding:10px 12px;color:var(--ink-soft);font-size:12.5px;margin:0 0 20px}
+  .note b{color:var(--ink)}
+
+  /* goal banner */
+  .banner{border-radius:14px;padding:22px 24px;color:#fff;background:#1f7a4d;margin-bottom:14px}
+  .banner .crumb{font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.9;margin-bottom:6px}
+  .banner h2{margin:0 0 6px;font-size:26px;font-weight:300}
+  .banner .why{font-style:italic;opacity:.92;margin:0 0 10px;font-size:13px}
+  .banner .meta{display:flex;gap:16px;font-size:12px;opacity:.9;flex-wrap:wrap}
+
+  /* L1 tabs (plain text — matches ProjectDetails) */
+  .l1{display:flex;gap:22px;align-items:center;border-bottom:1px solid var(--line);margin-bottom:18px;padding-bottom:0}
+  .l1 button{border:0;background:none;font:inherit;font-weight:600;font-size:13.5px;color:var(--muted);
+    cursor:pointer;padding:8px 0 12px;display:flex;align-items:center;gap:7px}
+  .l1 button.active{color:var(--ink)}
+  .l1 .count{font-size:11px;background:var(--chip-bg);color:var(--chip-ink);border-radius:999px;padding:1px 7px}
+
+  /* L2 tabs (underline — matches ProjectGoalsHqPanel) */
+  .l2{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:2px 0 18px}
+  .l2 button{border:0;background:none;font:inherit;font-size:13px;color:var(--ink-soft);cursor:pointer;
+    padding:8px 12px;border-bottom:2px solid transparent}
+  .l2 button.active{color:var(--ink);border-color:var(--accent);font-weight:600}
+
+  /* L3 tabs (filled pills — segmented control) */
+  .l3{display:flex;gap:8px;margin:0 0 20px}
+  .l3 button{border:0;font:inherit;font-size:12px;font-weight:600;border-radius:999px;padding:5px 12px;cursor:pointer;
+    background:var(--chip-bg);color:var(--ink-soft)}
+  .l3 button.active{background:var(--ink);color:var(--panel)}
+
+  .screen{display:none}
+  .screen.show{display:block;animation:fade .16s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+
+  /* generic bits */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:12px 0}
+  .card .bd{padding:12px 14px}
+  .row{display:flex;align-items:center;gap:10px}
+  .spread{justify-content:space-between}
+  .dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+  .muted{color:var(--muted)} .soft{color:var(--ink-soft)}
+  .mini{font-size:12px}
+  .h3{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin:0 0 8px}
+  .hint{font-size:12px;color:var(--muted);margin:-4px 0 10px}
+  .pill{font-size:11px;padding:1px 8px;border-radius:999px;background:var(--chip-bg);color:var(--chip-ink);white-space:nowrap}
+  .pill.ok{color:var(--ok)} .pill.warn{color:var(--warn)} .pill.bad{color:var(--bad)}
+  .kbtn{font-size:12px;padding:5px 10px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+  .link{color:var(--accent);cursor:pointer}
+  .linkbtn{border:0;background:none;color:var(--accent);cursor:pointer;font:inherit;font-size:12px;padding:0}
+
+  /* progress */
+  .bar{height:8px;border-radius:999px;background:var(--bar-track);overflow:hidden;width:88px;flex:none}
+  .bar.wide{width:120px}
+  .bar > i{display:block;height:100%;border-radius:999px;background:var(--accent)}
+  .bar.ok > i{background:var(--ok)} .bar.warn > i{background:var(--warn)} .bar.bad > i{background:var(--bad)}
+  .pct{font-variant-numeric:tabular-nums;font-weight:600;min-width:34px;text-align:right;font-size:12.5px}
+  .hchip{font-size:10.5px;padding:1px 7px;border-radius:999px;border:1px solid currentColor}
+  .hchip.ok{color:var(--ok)} .hchip.warn{color:var(--warn)} .hchip.bad{color:var(--bad)} .hchip.na{color:var(--muted)}
+  .spark{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--muted);letter-spacing:-1px;font-size:11px}
+
+  /* dual progress */
+  .dual{display:flex;gap:12px;flex-wrap:wrap}
+  .dual .col{flex:1;min-width:220px;border:1px solid var(--line);border-radius:10px;padding:12px}
+  .dual .col .lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:700;margin-bottom:6px}
+  .dual .col .n{display:flex;align-items:center;gap:8px}
+  .dual .col .sub{font-size:11.5px;color:var(--muted);margin-top:6px}
+
+  .checkrow{display:flex;align-items:center;gap:9px;margin:14px 0 4px;font-size:13px;color:var(--ink-soft);cursor:pointer}
+  .box{width:15px;height:15px;border-radius:4px;border:1px solid var(--line);flex:none;display:grid;place-items:center;font-size:10px;color:#fff}
+  .box.on{background:var(--accent);border-color:var(--accent)}
+
+  /* strategy group */
+  .sg{border:1px solid var(--line);border-radius:10px;margin:8px 0;overflow:hidden}
+  .sg .sh{display:flex;align-items:center;gap:9px;padding:10px 12px}
+  .sg .chev{border:0;background:none;color:var(--muted);cursor:pointer;font-size:11px;width:16px;transition:transform .15s;transform:rotate(90deg)}
+  .sg.closed .chev{transform:rotate(0deg)}
+  .sg .name{flex:1;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sg .kids{border-top:1px solid var(--line-2);padding:6px 12px 8px 34px}
+  .sg.closed .kids{display:none}
+  .sg .kid{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:13px}
+  .sg .kid .pn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sg .kid .st{font-size:11px;color:var(--muted);width:78px;flex:none}
+
+  /* native goal tab */
+  .g2{display:grid;grid-template-columns:1fr 2fr;gap:26px}
+  @media(max-width:760px){.g2{grid-template-columns:1fr}.dual .col{min-width:0}}
+  .pcard{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-left:4px solid #6366f1;
+    border-radius:9px;background:var(--panel-2);margin-bottom:7px;font-size:13px}
+  .pcard .pn{flex:1}
+  .pcard .st{font-size:11px;color:var(--muted)}
+  .tasklist .tk{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel);margin-bottom:7px;font-size:13px}
+  .tasklist .tk .tb{width:15px;height:15px;border:1px solid var(--line);border-radius:4px;flex:none}
+  .tasklist .tk .tn{flex:1}
+  .tasklist .tk .td{font-size:11px;color:var(--muted)}
+
+  table.kr{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px}
+  table.kr td{padding:7px 8px;border-bottom:1px solid var(--line-2)}
+  table.kr td:first-child{color:var(--ink)}
+  .ms{display:flex;align-items:center;gap:9px;padding:6px 4px;font-size:13px}
+  .ms .mb{width:15px;height:15px;border:1px solid var(--line);border-radius:4px;flex:none;display:grid;place-items:center;font-size:10px}
+  .ms .mb.on{background:var(--ok);border-color:var(--ok);color:#fff}
+
+  .chart{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--ink-soft);white-space:pre;overflow:auto;
+    background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:12px;margin:10px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>◇ GoalsHQ — Goal detail page · tabbed layout</h1>
+    <button class="themebtn" onclick="document.documentElement.setAttribute('data-theme', document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark')">◐ light / dark</button>
+  </div>
+  <p class="note"><b>What this shows.</b> The Goal page gets a top <b>Goal | Metrics</b> tab bar under the
+    banner — same idea as the Project page. <b>Goal</b> = today's native Projects + Tasks (unchanged).
+    <b>Metrics</b> = Progress / Records / Report, and <b>Progress</b> splits into
+    <b>Execution / Strategies / Projects</b>. Everything below is clickable. When GoalsHQ is off, the page
+    is exactly as it is today (no tab bar).</p>
+
+  <!-- ===== banner ===== -->
+  <div class="banner">
+    <div class="crumb">Finance / ⚑ Goal</div>
+    <h2>To make my first million dollars by 18 May 2027</h2>
+    <p class="why">A financial spring-board for every other area, goal and project — and the precursor to the billions.</p>
+    <div class="meta"><span>active</span><span>season</span><span>Target: 18/05/2027</span><span>7 tasks · 13 projects</span></div>
+  </div>
+
+  <!-- ===== L1 ===== -->
+  <div class="l1">
+    <button id="t-goal" class="active" onclick="l1('goal')">Goal <span class="count">7</span></button>
+    <button id="t-metrics" onclick="l1('metrics')">Metrics</button>
+  </div>
+
+  <!-- ============ GOAL TAB ============ -->
+  <section class="screen show" id="s-goal">
+    <div class="g2">
+      <div>
+        <p class="h3">Projects (13)</p>
+        <div class="pcard" style="border-left-color:#2f9e6b"><span class="pn">Rental acquisition</span><span class="st">in progress</span></div>
+        <div class="pcard" style="border-left-color:#2f9e6b"><span class="pn">Flip #1 — Elm St</span><span class="st">planned</span></div>
+        <div class="pcard" style="border-left-color:#3b6fd4"><span class="pn">Path S security-audit pipeline</span><span class="st">in progress</span></div>
+        <div class="pcard" style="border-left-color:#3b6fd4"><span class="pn">Path C retainer pipeline</span><span class="st">in progress</span></div>
+        <div class="pcard" style="border-left-color:#6366f1"><span class="pn">Week 4–6 financial model re-run</span><span class="st">planned</span></div>
+        <div class="mini muted" style="padding:4px 2px">…8 more</div>
+      </div>
+      <div>
+        <p class="h3">Tasks (7)</p>
+        <div class="tasklist">
+          <div class="tk"><span class="tb"></span><span class="tn">⚑ PLAN CHECKPOINT — break Phase 2 into daily/weekly tasks</span><span class="td">2026-10-09</span></div>
+          <div class="tk"><span class="tb"></span><span class="tn">⚑ PLAN CHECKPOINT — re-derive buyer-track emphasis</span><span class="td">2026-11-06</span></div>
+          <div class="tk"><span class="tb"></span><span class="tn">Week 4–6: re-run financial model with real lead/close data</span><span class="td">2026-10-09</span></div>
+          <p class="h3" style="margin:14px 0 8px">Completed (2)</p>
+          <div class="tk" style="opacity:.55"><span class="tb">✓</span><span class="tn" style="text-decoration:line-through">Week 4–6: re-run financial model with real lead/close data</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="note" style="margin-top:20px">Unchanged from today — same components (<code>TaskList</code>, project cards). The only
+      difference is it now lives under the <b>Goal</b> tab instead of being permanently stacked above the metrics.</p>
+  </section>
+
+  <!-- ============ METRICS TAB ============ -->
+  <section class="screen" id="s-metrics">
+    <div class="l2">
+      <button id="m-progress" class="active" onclick="l2('progress')">Progress</button>
+      <button id="m-records" onclick="l2('records')">Records</button>
+      <button id="m-report" onclick="l2('report')">Report</button>
+    </div>
+
+    <!-- ---- PROGRESS ---- -->
+    <div class="screen show" id="s-progress">
+      <div class="l3">
+        <button id="p-exec" class="active" onclick="l3('exec')">Execution</button>
+        <button id="p-strat" onclick="l3('strat')">Strategies</button>
+        <button id="p-proj" onclick="l3('proj')">Projects</button>
+      </div>
+
+      <!-- EXECUTION -->
+      <div class="screen show" id="s-exec">
+        <div class="dual" id="dualExec">
+          <div class="col">
+            <div class="lbl">Execution</div>
+            <div class="n"><span class="bar warn wide"><i style="width:58%"></i></span><span class="pct">58%</span></div>
+            <div class="row" style="gap:8px;margin-top:8px"><span class="hchip warn">at_risk</span><span class="spark">‿⁀‿⁀‿</span></div>
+            <div class="sub">from 13 projects + 4 direct tasks</div>
+          </div>
+          <div class="col" id="outcomeCol" style="display:none">
+            <div class="lbl">Outcome</div>
+            <div class="n"><span class="bar bad wide"><i style="width:31%"></i></span><span class="pct">31%</span></div>
+            <div class="row" style="gap:8px;margin-top:8px"><span class="hchip bad">off_track</span><span class="spark">‿‿⁀‿</span></div>
+            <div class="sub">from 3 key results</div>
+          </div>
+        </div>
+
+        <label class="checkrow" onclick="toggleOutcome()">
+          <span class="box" id="ocBox"></span>
+          Track outcome metrics (Key Results / Milestones)
+        </label>
+
+        <div id="metricsPanels" style="display:none;margin-top:14px">
+          <div class="row spread" style="margin-bottom:2px"><p class="h3" style="margin:0">Key results</p><button class="linkbtn">+ Add</button></div>
+          <table class="kr">
+            <tr><td>Net profit</td><td class="muted">$11k / $1,000,000</td><td style="width:130px"><span class="bar bad"><i style="width:1%"></i></span></td><td class="mini muted">auto: Σ records</td></tr>
+            <tr><td>Doors owned</td><td class="muted">4 / 10</td><td><span class="bar warn"><i style="width:40%"></i></span></td><td class="mini muted">manual</td></tr>
+            <tr><td>Qualified leads</td><td class="muted">18 / 50</td><td><span class="bar warn"><i style="width:36%"></i></span></td><td class="mini muted">manual</td></tr>
+          </table>
+          <div class="row spread" style="margin:14px 0 2px"><p class="h3" style="margin:0">Milestones</p><button class="linkbtn">+ Add</button></div>
+          <div class="ms"><span class="mb on">✓</span><span style="flex:1">First rental cash-flow positive</span><span class="mini muted">2026-11-01</span></div>
+          <div class="ms"><span class="mb"></span><span style="flex:1">Cumulative $250k banked</span><span class="mini muted">2026-12-31</span></div>
+        </div>
+
+        <p class="note" style="margin-top:16px">Execution bar is always shown. Ticking the box reveals the <b>Outcome</b>
+          column <i>and</i> the Key Results + Milestones editor (the existing <code>MetricsPanels</code>, incl. the
+          milestone auto-achieve triggers we just built). Data reloads on toggle.</p>
+      </div>
+
+      <!-- STRATEGIES -->
+      <div class="screen" id="s-strat">
+        <div class="row spread" style="margin-bottom:2px">
+          <p class="h3" style="margin:0">Strategies</p>
+          <button class="linkbtn">+ New strategy</button>
+        </div>
+        <p class="hint">Grouping only — not part of the numbers above. Each strategy's bar is the plain average of its projects.</p>
+
+        <div class="sg" id="sg1">
+          <div class="sh">
+            <button class="chev" onclick="sg('sg1')">▶</button>
+            <span class="dot" style="background:#2f9e6b"></span>
+            <span class="name link">Real Estate</span>
+            <span class="bar warn"><i style="width:49%"></i></span><span class="pct">49%</span><span class="hchip warn">at_risk</span>
+          </div>
+          <div class="kids">
+            <div class="kid"><span class="pn link">Rental acquisition</span><span class="st">in progress</span><span class="bar ok"><i style="width:61%"></i></span><span class="pct">61%</span></div>
+            <div class="kid"><span class="pn link">Flip #1 — Elm St</span><span class="st">planned</span><span class="bar warn"><i style="width:34%"></i></span><span class="pct">34%</span></div>
+            <div class="kid"><span class="pn link">REIT research</span><span class="st">not started</span><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></div>
+          </div>
+        </div>
+
+        <div class="sg" id="sg2">
+          <div class="sh">
+            <button class="chev" onclick="sg('sg2')">▶</button>
+            <span class="dot" style="background:#3b6fd4"></span>
+            <span class="name link">Systems Security</span>
+            <span class="bar ok"><i style="width:71%"></i></span><span class="pct">71%</span><span class="hchip ok">on_track</span>
+          </div>
+          <div class="kids">
+            <div class="kid"><span class="pn link">Path S security-audit pipeline</span><span class="st">in progress</span><span class="bar ok"><i style="width:78%"></i></span><span class="pct">78%</span></div>
+            <div class="kid"><span class="pn link">Path C retainer pipeline</span><span class="st">in progress</span><span class="bar ok"><i style="width:64%"></i></span><span class="pct">64%</span></div>
+          </div>
+        </div>
+
+        <div class="sg" id="sg3">
+          <div class="sh">
+            <button class="chev" onclick="sg('sg3')">▶</button>
+            <span class="name soft" style="flex:1">Directly on the goal</span>
+            <span class="mini muted">2 projects, no strategy</span>
+          </div>
+          <div class="kids">
+            <div class="kid"><span class="pn link">Week 4–6 financial model re-run</span><span class="st">planned</span><span class="bar"><i style="width:10%"></i></span><span class="pct">10%</span></div>
+            <div class="kid"><span class="pn link">Offer document for the 3 tracks</span><span class="st">planned</span><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></div>
+          </div>
+        </div>
+
+        <p class="note" style="margin-top:14px">Strategy groups are <b>expanded by default</b>; click a chevron to collapse one.
+          The <b>Directly on the goal</b> section at the bottom catches every project that isn't linked to any strategy,
+          so nothing is hidden on this tab.</p>
+      </div>
+
+      <!-- PROJECTS -->
+      <div class="screen" id="s-proj">
+        <p class="h3">Projects</p>
+        <div class="card"><div class="bd" style="padding:4px 12px">
+          <div class="row" style="padding:7px 0;border-bottom:1px solid var(--line-2)"><span class="link" style="flex:1">Rental acquisition</span><span class="bar ok"><i style="width:61%"></i></span><span class="pct">61%</span></div>
+          <div class="row" style="padding:7px 0;border-bottom:1px solid var(--line-2)"><span class="link" style="flex:1">Flip #1 — Elm St</span><span class="bar warn"><i style="width:34%"></i></span><span class="pct">34%</span></div>
+          <div class="row" style="padding:7px 0;border-bottom:1px solid var(--line-2)"><span class="link" style="flex:1">Path S security-audit pipeline</span><span class="bar ok"><i style="width:78%"></i></span><span class="pct">78%</span></div>
+          <div class="row" style="padding:7px 0;border-bottom:1px solid var(--line-2)"><span class="link" style="flex:1">Path C retainer pipeline</span><span class="bar ok"><i style="width:64%"></i></span><span class="pct">64%</span></div>
+          <div class="row" style="padding:7px 0;border-bottom:1px solid var(--line-2)"><span class="link" style="flex:1">REIT research</span><span class="bar"><i style="width:0%"></i></span><span class="pct">0%</span></div>
+          <div class="row" style="padding:7px 0"><span class="link" style="flex:1">Week 4–6 financial model re-run</span><span class="bar"><i style="width:10%"></i></span><span class="pct">10%</span></div>
+        </div></div>
+        <p class="note">Flat roster of every project linked to this goal, with its execution %. Same data as the
+          old inline "Projects" list — just moved under its own tab.</p>
+      </div>
+    </div>
+
+    <!-- ---- RECORDS ---- -->
+    <div class="screen" id="s-records">
+      <div class="row spread" style="margin-bottom:8px">
+        <p class="h3" style="margin:0">Records</p>
+        <span class="pill">Template: Contribution Ledger ▾</span>
+      </div>
+      <div class="card"><div class="bd" style="padding:0">
+        <table class="kr" style="margin:0">
+          <tr><td style="width:96px" class="muted">2026-09-05</td><td>FinTech A — Path S deposit</td><td class="muted">$11,000</td><td class="muted">→ Net profit</td><td class="mini link">invoice-0092.pdf</td></tr>
+          <tr><td class="muted">2026-09-12</td><td>FinTech A — milestone 2</td><td class="muted">$9,000</td><td class="muted">→ Net profit</td><td class="mini link">invoice-0104.pdf</td></tr>
+        </table>
+      </div></div>
+      <p class="mini muted">Σ counted toward "Net profit": $20,000 · 2 entries · latest 2026-09-12</p>
+      <p class="note">The existing <code>RecordsPanel</code>, unchanged — now the middle L2 tab.</p>
+    </div>
+
+    <!-- ---- REPORT ---- -->
+    <div class="screen" id="s-report">
+      <div class="row spread" style="margin-bottom:8px">
+        <p class="h3" style="margin:0">Report · This quarter</p>
+        <span class="pill">🖨 Print</span>
+      </div>
+      <div class="dual" style="margin-bottom:10px">
+        <div class="col"><div class="lbl">Execution</div><div class="n"><span class="bar warn wide"><i style="width:58%"></i></span><span class="pct">58%</span></div></div>
+        <div class="col"><div class="lbl">Outcome</div><div class="n"><span class="bar bad wide"><i style="width:31%"></i></span><span class="pct">31%</span></div></div>
+      </div>
+      <div class="chart">contribution over time ($, cumulative)
+ 1M ┤                                        ____
+    │                          _____________/
+    │        _________________/
+  0 ┼──────────────────────────────────────────────
+    Sep     Oct     Nov     Dec     Jan     Feb</div>
+      <p class="mini soft"><b>Narrative.</b> Execution slipped to 58% this quarter; Real Estate is carrying it while
+        Systems Security is ahead of pace. Net-profit KR is far behind the run-rate needed for May 2027…</p>
+      <p class="note">The existing <code>ReportTab</code>, unchanged — the third L2 tab.</p>
+    </div>
+  </section>
+
+  <p class="note" style="margin-top:26px"><b>Open choices — tell me if you want any of these changed:</b><br>
+    1. <b>Count pill</b> on the Goal tab: currently just the task count (7). Add a projects count too, or drop the pill?<br>
+    2. When the GoalsHQ fetch <b>fails</b>: hide the whole tab bar and show native content only (proposed), or keep a "Metrics" tab that says "unavailable"?<br>
+    3. <b>Landing tab</b>: opens on "Goal" (proposed). OK, or default to "Metrics"?<br>
+    4. L3 pill style vs. a second row of underline tabs — the mockup uses filled pills to make the 3 levels visually distinct.</p>
+</div>
+
+<script>
+  function show(id, sibs){ sibs.forEach(function(s){ document.getElementById(s).classList.toggle('show', s===id); }); }
+  function setActive(id, ids){ ids.forEach(function(b){ document.getElementById(b).classList.toggle('active', b===id); }); }
+
+  function l1(which){
+    setActive('t-'+which, ['t-goal','t-metrics']);
+    show('s-'+which, ['s-goal','s-metrics']);
+  }
+  function l2(which){
+    setActive('m-'+which, ['m-progress','m-records','m-report']);
+    show('s-'+which, ['s-progress','s-records','s-report']);
+  }
+  function l3(which){
+    setActive('p-'+which, ['p-exec','p-strat','p-proj']);
+    show('s-'+which, ['s-exec','s-strat','s-proj']);
+  }
+  function toggleOutcome(){
+    var on = document.getElementById('ocBox').classList.toggle('on');
+    document.getElementById('ocBox').textContent = on ? '✓' : '';
+    document.getElementById('outcomeCol').style.display = on ? '' : 'none';
+    document.getElementById('metricsPanels').style.display = on ? '' : 'none';
+  }
+  function sg(id){ document.getElementById(id).classList.toggle('closed'); }
+  // start with sg2 collapsed to show both states
+  document.getElementById('sg2').classList.add('closed');
+</script>
+</body>
+</html>
