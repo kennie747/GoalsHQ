@@ -394,6 +394,92 @@ describe('GoalsHQ routes (Strategy = grouping, execution/outcome split)', () => 
             );
             expect(res.status).toBe(201);
         });
+
+        it('is idempotent — a second expand returns the same task, creates no duplicate', async () => {
+            const goal = await makeGoal();
+            const created = await agent
+                .post(`/api/goalshq/goal/${goal.uid}/milestones`)
+                .send({ title: 'Ship v1' });
+            const msUid = created.body.milestone.uid;
+
+            const first = await agent.post(
+                `/api/goalshq/milestones/${msUid}/expand`
+            );
+            const second = await agent.post(
+                `/api/goalshq/milestones/${msUid}/expand`
+            );
+
+            expect(second.body.task.uid).toBe(first.body.task.uid);
+            expect(second.body.task.already_existed).toBe(true);
+            expect(await Task.count({ where: { name: 'Ship v1' } })).toBe(1);
+
+            const detail = await agent.get(`/api/goalshq/goals/${goal.uid}`);
+            const m = detail.body.goal.milestones.find((x) => x.uid === msUid);
+            expect(m.expanded_task_uid).toBe(first.body.task.uid);
+            expect(m.task_uids).toContain(first.body.task.uid);
+        });
+
+        it('deleting the expanded task reopens the expand action', async () => {
+            const goal = await makeGoal();
+            const project = await Project.create({
+                user_id: user.id,
+                name: 'P',
+                goal_id: goal.id,
+                status: 'in_progress',
+            });
+            const created = await agent
+                .post(`/api/goalshq/project/${project.uid}/milestones`)
+                .send({ title: 'Do the thing' });
+            const msUid = created.body.milestone.uid;
+            const exp = await agent.post(
+                `/api/goalshq/milestones/${msUid}/expand`
+            );
+
+            await agent.delete(`/api/task/${exp.body.task.uid}`).expect(200);
+
+            const m = await GoalshqMilestone.findOne({ where: { uid: msUid } });
+            expect(m.expanded_task_id).toBeNull();
+            const detail = await agent.get(
+                `/api/goalshq/projects/${project.uid}`
+            );
+            const dm = detail.body.project.milestones.find(
+                (x) => x.uid === msUid
+            );
+            expect(dm.expanded_task_uid).toBeNull();
+            expect(dm.task_uids).toEqual([]);
+
+            // A fresh expand now creates a new task again.
+            const again = await agent
+                .post(`/api/goalshq/milestones/${msUid}/expand`)
+                .expect(201);
+            expect(again.body.task.already_existed).toBe(false);
+        });
+
+        it('completing the expanded task auto-achieves the milestone (its only task)', async () => {
+            const goal = await makeGoal();
+            const project = await Project.create({
+                user_id: user.id,
+                name: 'P',
+                goal_id: goal.id,
+                status: 'in_progress',
+            });
+            const created = await agent
+                .post(`/api/goalshq/project/${project.uid}/milestones`)
+                .send({ title: 'One and done' });
+            const msUid = created.body.milestone.uid;
+            const exp = await agent.post(
+                `/api/goalshq/milestones/${msUid}/expand`
+            );
+
+            await agent
+                .patch(`/api/task/${exp.body.task.uid}`)
+                .send({ status: 'done' })
+                .expect(200);
+
+            const m = await GoalshqMilestone.findOne({ where: { uid: msUid } });
+            expect(m.status).toBe('achieved');
+            expect(m.auto_achieved).toBe(true);
+        });
     });
 
     /* --------------------------------------------------------- auth scoping */

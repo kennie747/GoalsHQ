@@ -119,7 +119,10 @@ function serializeRecord(
     };
 }
 
-function serializeMilestone(m, { taskUids = [], autoKrUid = null } = {}) {
+function serializeMilestone(
+    m,
+    { taskUids = [], autoKrUid = null, expandedTaskUid = null } = {}
+) {
     return {
         uid: m.uid,
         parent_type: m.parent_type,
@@ -134,6 +137,7 @@ function serializeMilestone(m, { taskUids = [], autoKrUid = null } = {}) {
         auto_kr_threshold: num(m.auto_kr_threshold),
         auto_achieved: !!m.auto_achieved,
         task_uids: taskUids,
+        expanded_task_uid: expandedTaskUid,
     };
 }
 

@@ -82,6 +82,13 @@ module.exports = (sequelize) => {
                 allowNull: false,
                 defaultValue: false,
             },
+            // The single task created by "Expand into task". While this task
+            // still exists the expand action is a no-op — see gcOrphans() and
+            // service.expandMilestone().
+            expanded_task_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+            },
             sort_order: {
                 type: DataTypes.INTEGER,
                 allowNull: false,

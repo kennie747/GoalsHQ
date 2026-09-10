@@ -407,6 +407,8 @@ export interface ExpandedTask {
     uid: string;
     name: string;
     due_date: string | null;
+    /** true when the milestone already had a live task and none was created */
+    already_existed?: boolean;
 }
 
 /* ============================================================ Part 2 */

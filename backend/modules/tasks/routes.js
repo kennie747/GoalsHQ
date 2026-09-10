@@ -1019,6 +1019,17 @@ router.delete('/task/:uid', requireTaskWriteAccess, async (req, res) => {
             await sequelize.query('PRAGMA foreign_keys = ON');
         }
 
+        // GoalsHQ: drop milestone task-links and forget any milestone that
+        // spawned this task via "Expand into task", then recompute. Best-effort.
+        try {
+            await require('../goalshq/service').detachTask(taskId);
+        } catch (goalshqErr) {
+            logError(
+                'GoalsHQ detachTask after task delete failed:',
+                goalshqErr
+            );
+        }
+
         res.json({ message: 'Task successfully deleted' });
     } catch (error) {
         res.status(400).json({

@@ -1269,6 +1269,16 @@ async function gcOrphans() {
         });
     }
 
+    // "Expand into task" pointer whose task is gone — reopens the expand action.
+    removed += await GoalshqMilestone.update(
+        { expanded_task_id: null },
+        {
+            where: {
+                expanded_task_id: { [Op.notIn]: [...liveTaskIds, 0] },
+            },
+        }
+    ).then(([n]) => n || 0);
+
     if (removed > 0) {
         logService.logInfo(`[goalshq] gcOrphans removed ${removed} rows`);
     }

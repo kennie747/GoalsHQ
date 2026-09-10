@@ -155,7 +155,9 @@
     "noProjectTasks": "This project has no tasks.",
     "metrics": "Metrics",
     "fromTasks": "from task completion",
-    "metricsUnavailable": "Metrics are unavailable."
+    "metricsUnavailable": "Metrics are unavailable.",
+    "msExpandedHint": "Opens the task this milestone created",
+    "noLinkableTasks": "No tasks available to link."
   },
   "common": {
     "save": "Save",

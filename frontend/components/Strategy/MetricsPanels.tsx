@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { TrashIcon, ArrowRightCircleIcon } from '@heroicons/react/24/outline';
 import { ParentType } from '../../entities/GoalSettings';
@@ -22,7 +23,7 @@ import {
     fetchKeyResultDetail,
     setMilestoneTasks,
 } from '../../utils/goalsHqService';
-import { fetchTasks } from '../../utils/tasksService';
+import { fetchTasks, fetchTaskByUid } from '../../utils/tasksService';
 import { Task } from '../../entities/Task';
 
 export interface PropagateTarget {
@@ -74,7 +75,6 @@ const MetricsPanels: React.FC<Props> = ({
     });
     const [msDraft, setMsDraft] = useState({ title: '', target_date: '' });
     const [busy, setBusy] = useState(false);
-    const [expandedUids, setExpandedUids] = useState<Set<string>>(new Set());
     const [checkInUid, setCheckInUid] = useState<string | null>(null);
     const [checkInValue, setCheckInValue] = useState('');
     const [propagateUid, setPropagateUid] = useState<string | null>(null);
@@ -183,34 +183,54 @@ const MetricsPanels: React.FC<Props> = ({
     const taskProjectUids =
         milestoneTaskProjectUids ??
         (parentType === 'project' ? [parentUid] : []);
-    const canLinkTasks = taskProjectUids.length > 0;
+
+    // The pickable task list for a milestone's trigger config: every task in
+    // the entity's project scope, PLUS any task already linked to this
+    // milestone (e.g. the one "Expand into task" created) even if it falls
+    // outside that scope — so it always renders checked.
+    const loadLinkableTasks = async (m: Milestone) => {
+        try {
+            const perProject = await Promise.all(
+                taskProjectUids.map((puid) =>
+                    fetchTasks(`?project_uid=${puid}`).then((r) => r.tasks || [])
+                )
+            );
+            const seen = new Set<string>();
+            const merged: Task[] = [];
+            for (const list of perProject) {
+                for (const tk of list) {
+                    if (tk.uid && !seen.has(tk.uid)) {
+                        seen.add(tk.uid);
+                        merged.push(tk);
+                    }
+                }
+            }
+            const missing = (m.task_uids || []).filter((u) => !seen.has(u));
+            if (missing.length > 0) {
+                const extra = await Promise.all(
+                    missing.map((u) =>
+                        fetchTaskByUid(u).catch(() => null as Task | null)
+                    )
+                );
+                for (const tk of extra) {
+                    if (tk && tk.uid && !seen.has(tk.uid)) {
+                        seen.add(tk.uid);
+                        merged.push(tk);
+                    }
+                }
+            }
+            setLinkableTasks(merged);
+        } catch {
+            setLinkableTasks([]);
+        }
+    };
 
     const openTrigger = async (m: Milestone) => {
         const next = triggerMsUid === m.uid ? null : m.uid;
         setTriggerMsUid(next);
-        if (next && canLinkTasks && linkableTasks === null) {
-            try {
-                const perProject = await Promise.all(
-                    taskProjectUids.map((puid) =>
-                        fetchTasks(`?project_uid=${puid}`).then(
-                            (r) => r.tasks || []
-                        )
-                    )
-                );
-                const seen = new Set<string>();
-                const merged: Task[] = [];
-                for (const list of perProject) {
-                    for (const tk of list) {
-                        if (tk.uid && !seen.has(tk.uid)) {
-                            seen.add(tk.uid);
-                            merged.push(tk);
-                        }
-                    }
-                }
-                setLinkableTasks(merged);
-            } catch {
-                setLinkableTasks([]);
-            }
+        if (next) {
+            setLinkableTasks(null);
+            await loadLinkableTasks(m);
         }
     };
 
@@ -220,6 +240,10 @@ const MetricsPanels: React.FC<Props> = ({
         else current.add(taskUid);
         await setMilestoneTasks(m.uid, Array.from(current));
         onChange();
+        await loadLinkableTasks({
+            ...m,
+            task_uids: Array.from(current),
+        });
     };
     const [deleting, setDeleting] = useState<{
         kind: 'kr' | 'milestone';
@@ -242,9 +266,15 @@ const MetricsPanels: React.FC<Props> = ({
         onChange();
     };
 
+    const [expanding, setExpanding] = useState<string | null>(null);
     const expandMs = async (m: Milestone) => {
-        await expandMilestone(m.uid);
-        setExpandedUids((prev) => new Set(prev).add(m.uid));
+        setExpanding(m.uid);
+        try {
+            await expandMilestone(m.uid);
+            onChange();
+        } finally {
+            setExpanding(null);
+        }
     };
 
     return (
@@ -555,13 +585,17 @@ const MetricsPanels: React.FC<Props> = ({
                                         ⚙
                                     </button>
                                 )}
-                                {expandedUids.has(m.uid) ? (
-                                    <span className="text-xs text-green-600 dark:text-green-400">
-                                        {t(
-                                            'goalshq.msExpanded',
-                                            'Task created'
+                                {m.expanded_task_uid ? (
+                                    <Link
+                                        to={`/task/${m.expanded_task_uid}`}
+                                        className="text-xs text-green-600 hover:underline dark:text-green-400"
+                                        title={t(
+                                            'goalshq.msExpandedHint',
+                                            'Opens the task this milestone created'
                                         )}
-                                    </span>
+                                    >
+                                        {t('goalshq.msExpanded', 'Task created')}
+                                    </Link>
                                 ) : (
                                     <button
                                         aria-label={t(
@@ -572,8 +606,9 @@ const MetricsPanels: React.FC<Props> = ({
                                             'goalshq.msExpand',
                                             'Expand into task'
                                         )}
+                                        disabled={expanding === m.uid}
                                         onClick={() => expandMs(m)}
-                                        className="text-gray-400 hover:text-blue-500"
+                                        className="text-gray-400 hover:text-blue-500 disabled:opacity-40"
                                     >
                                         <ArrowRightCircleIcon className="h-4 w-4" />
                                     </button>
@@ -679,7 +714,8 @@ const MetricsPanels: React.FC<Props> = ({
                                             className={`${inputCls} w-24`}
                                         />
                                     </div>
-                                    {canLinkTasks && (
+                                    {(taskProjectUids.length > 0 ||
+                                        (m.task_uids || []).length > 0) && (
                                         <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-600">
                                             <div className="mb-1 text-gray-500">
                                                 {t(
@@ -697,8 +733,8 @@ const MetricsPanels: React.FC<Props> = ({
                                             ) : linkableTasks.length === 0 ? (
                                                 <div className="text-gray-400">
                                                     {t(
-                                                        'goalshq.noProjectTasks',
-                                                        'This project has no tasks.'
+                                                        'goalshq.noLinkableTasks',
+                                                        'No tasks available to link.'
                                                     )}
                                                 </div>
                                             ) : (

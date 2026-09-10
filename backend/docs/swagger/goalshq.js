@@ -295,6 +295,16 @@
  *     responses:
  *       200: { description: "{ key_result }" }
  *
+ * /api/goalshq/milestones/{uid}/expand:
+ *   post:
+ *     summary: Create a single task from a milestone (idempotent — a second call returns the existing task, `task.already_existed = true`, and creates no duplicate). Deleting that task reopens the action.
+ *     tags: [GoalsHQ]
+ *     security: [ { cookieAuth: [] }, { BearerAuth: [] } ]
+ *     parameters:
+ *       - { in: path, name: uid, required: true, schema: { type: string } }
+ *     responses:
+ *       201: { description: "{ task: { uid, name, due_date, already_existed } }" }
+ *
  * /api/goalshq/milestones/{uid}/tasks:
  *   put:
  *     summary: Set which task(s) a milestone auto-achieves from
