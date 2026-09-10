@@ -545,6 +545,23 @@ export const setMilestoneTasks = async (
     return (await response.json()).milestones;
 };
 
+export const setMilestoneProjects = async (
+    uid: string,
+    projectUids: string[]
+): Promise<Milestone[]> => {
+    const response = await fetch(
+        getApiPath(`goalshq/milestones/${uid}/projects`),
+        {
+            method: 'PUT',
+            credentials: 'include',
+            headers: await jsonHeaders(),
+            body: JSON.stringify({ project_uids: projectUids }),
+        }
+    );
+    await handleAuthResponse(response, 'Failed to link projects.');
+    return (await response.json()).milestones;
+};
+
 export const fetchGoalshqProject = async (uid: string): Promise<any> => {
     const response = await fetch(getApiPath(`goalshq/projects/${uid}`), {
         credentials: 'include',

@@ -24,6 +24,12 @@ export interface Task {
     Area?: Area;
     goal_id?: number | null;
     goal_uid?: string | null;
+    Goal?: {
+        id?: number;
+        uid: string;
+        title: string;
+        status?: string;
+    } | null;
     created_at?: string;
     updated_at?: string;
     recurrence_type?: RecurrenceType;

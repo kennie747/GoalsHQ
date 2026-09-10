@@ -17,6 +17,8 @@ export interface Milestone {
     auto_kr_threshold?: number | null;
     auto_achieved?: boolean;
     task_uids?: string[];
+    /** whole-project auto-achieve links (live-expanded to the project's tasks) */
+    project_uids?: string[];
     /** uid of the task created by "Expand into task", if it still exists */
     expanded_task_uid?: string | null;
 }

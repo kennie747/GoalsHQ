@@ -322,6 +322,23 @@
  *     responses:
  *       200: { description: "{ milestones }" }
  *
+ * /api/goalshq/milestones/{uid}/projects:
+ *   put:
+ *     summary: Set which whole project(s) a milestone auto-achieves from — each is expanded to the project's live (non-archived/cancelled) task set on every rollup, so tasks added or removed later stay accounted for. Unioned with the fixed task list under completion_mode.
+ *     tags: [GoalsHQ]
+ *     security: [ { cookieAuth: [] }, { BearerAuth: [] } ]
+ *     parameters:
+ *       - { in: path, name: uid, required: true, schema: { type: string } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               project_uids: { type: array, items: { type: string } }
+ *     responses:
+ *       200: { description: "{ milestones }" }
+ *
  * /api/goalshq/{parentType}/{uid}/report:
  *   get:
  *     summary: Assembled per-entity report (quantitative panels + narrative)

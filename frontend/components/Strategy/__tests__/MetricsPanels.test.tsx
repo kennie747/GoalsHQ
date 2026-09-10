@@ -24,9 +24,19 @@ jest.mock('../../../utils/goalsHqService', () => ({
     propagateKeyResult: jest.fn(),
     fetchKeyResultDetail: jest.fn(),
     setMilestoneTasks: jest.fn(),
+    setMilestoneProjects: jest.fn(),
 }));
 jest.mock('../../../utils/tasksService', () => ({
-    fetchTasks: jest.fn().mockResolvedValue({ tasks: [] }),
+    fetchTasks: jest.fn().mockResolvedValue({
+        tasks: [
+            {
+                uid: 't1',
+                name: 'Ship v1',
+                status: 'not_started',
+                Project: { uid: 'p1', name: 'Launch', status: 'in_progress' },
+            },
+        ],
+    }),
     fetchTaskByUid: jest.fn(),
 }));
 
@@ -86,17 +96,15 @@ describe('MetricsPanels — expand into task', () => {
         expect(link).toHaveAttribute('href', '/task/t1');
     });
 
-    it('the trigger panel shows the expanded task already linked/checked', async () => {
-        const { fetchTaskByUid } = jest.requireMock('../../../utils/tasksService');
-        (fetchTaskByUid as jest.Mock).mockResolvedValue({
-            uid: 't1',
-            name: 'Ship v1',
-            status: 'not_started',
-        });
+    it('the trigger panel mounts the task picker with the linked task checked', async () => {
         renderPanel([ms({ expanded_task_uid: 't1', task_uids: ['t1'] })]);
 
         await userEvent.click(screen.getByTitle('Auto-achieve triggers'));
 
+        // picker rendered
+        expect(
+            await screen.findByPlaceholderText('Search tasks…')
+        ).toBeInTheDocument();
         const checkbox = await screen.findByRole('checkbox', {
             name: /Ship v1/,
         });

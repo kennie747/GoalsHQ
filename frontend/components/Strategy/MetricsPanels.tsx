@@ -22,9 +22,9 @@ import {
     propagateKeyResult,
     fetchKeyResultDetail,
     setMilestoneTasks,
+    setMilestoneProjects,
 } from '../../utils/goalsHqService';
-import { fetchTasks, fetchTaskByUid } from '../../utils/tasksService';
-import { Task } from '../../entities/Task';
+import MilestoneTriggerTasks from './MilestoneTriggerTasks';
 
 export interface PropagateTarget {
     parent_type: 'goal' | 'strategy' | 'project';
@@ -42,12 +42,6 @@ interface Props {
     readOnly?: boolean;
     /** linked strategies/projects a KR can be propagated down to */
     propagateTargets?: PropagateTarget[];
-    /**
-     * Project uids whose tasks can be linked to a milestone trigger. For a
-     * project parent this defaults to [parentUid]; for a goal/strategy parent
-     * the caller passes its linked projects' uids.
-     */
-    milestoneTaskProjectUids?: string[];
 }
 
 const inputCls =
@@ -61,7 +55,6 @@ const MetricsPanels: React.FC<Props> = ({
     onChange,
     readOnly = false,
     propagateTargets = [],
-    milestoneTaskProjectUids,
 }) => {
     const { t } = useTranslation();
     const [krDraft, setKrDraft] = useState({
@@ -178,60 +171,9 @@ const MetricsPanels: React.FC<Props> = ({
     };
 
     const [triggerMsUid, setTriggerMsUid] = useState<string | null>(null);
-    const [linkableTasks, setLinkableTasks] = useState<Task[] | null>(null);
 
-    const taskProjectUids =
-        milestoneTaskProjectUids ??
-        (parentType === 'project' ? [parentUid] : []);
-
-    // The pickable task list for a milestone's trigger config: every task in
-    // the entity's project scope, PLUS any task already linked to this
-    // milestone (e.g. the one "Expand into task" created) even if it falls
-    // outside that scope — so it always renders checked.
-    const loadLinkableTasks = async (m: Milestone) => {
-        try {
-            const perProject = await Promise.all(
-                taskProjectUids.map((puid) =>
-                    fetchTasks(`?project_uid=${puid}`).then((r) => r.tasks || [])
-                )
-            );
-            const seen = new Set<string>();
-            const merged: Task[] = [];
-            for (const list of perProject) {
-                for (const tk of list) {
-                    if (tk.uid && !seen.has(tk.uid)) {
-                        seen.add(tk.uid);
-                        merged.push(tk);
-                    }
-                }
-            }
-            const missing = (m.task_uids || []).filter((u) => !seen.has(u));
-            if (missing.length > 0) {
-                const extra = await Promise.all(
-                    missing.map((u) =>
-                        fetchTaskByUid(u).catch(() => null as Task | null)
-                    )
-                );
-                for (const tk of extra) {
-                    if (tk && tk.uid && !seen.has(tk.uid)) {
-                        seen.add(tk.uid);
-                        merged.push(tk);
-                    }
-                }
-            }
-            setLinkableTasks(merged);
-        } catch {
-            setLinkableTasks([]);
-        }
-    };
-
-    const openTrigger = async (m: Milestone) => {
-        const next = triggerMsUid === m.uid ? null : m.uid;
-        setTriggerMsUid(next);
-        if (next) {
-            setLinkableTasks(null);
-            await loadLinkableTasks(m);
-        }
+    const openTrigger = (m: Milestone) => {
+        setTriggerMsUid(triggerMsUid === m.uid ? null : m.uid);
     };
 
     const toggleMsTask = async (m: Milestone, taskUid: string) => {
@@ -240,10 +182,14 @@ const MetricsPanels: React.FC<Props> = ({
         else current.add(taskUid);
         await setMilestoneTasks(m.uid, Array.from(current));
         onChange();
-        await loadLinkableTasks({
-            ...m,
-            task_uids: Array.from(current),
-        });
+    };
+
+    const toggleMsProject = async (m: Milestone, projectUid: string) => {
+        const current = new Set(m.project_uids || []);
+        if (current.has(projectUid)) current.delete(projectUid);
+        else current.add(projectUid);
+        await setMilestoneProjects(m.uid, Array.from(current));
+        onChange();
     };
     const [deleting, setDeleting] = useState<{
         kind: 'kr' | 'milestone';
@@ -661,8 +607,27 @@ const MetricsPanels: React.FC<Props> = ({
                                             </option>
                                         </select>
                                         <span className="text-gray-400">
-                                            ({(m.task_uids || []).length}{' '}
-                                            {t('goalshq.linked', 'linked')})
+                                            (
+                                            {t(
+                                                'goalshq.linkedCount',
+                                                '{{n}} linked',
+                                                {
+                                                    n: (m.task_uids || [])
+                                                        .length,
+                                                }
+                                            )}
+                                            {(m.project_uids || []).length >
+                                                0 &&
+                                                ` + ${t(
+                                                    'goalshq.projectsLinked',
+                                                    '{{n}} project(s)',
+                                                    {
+                                                        n: (
+                                                            m.project_uids || []
+                                                        ).length,
+                                                    }
+                                                )}`}
+                                            )
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-2">
@@ -714,67 +679,17 @@ const MetricsPanels: React.FC<Props> = ({
                                             className={`${inputCls} w-24`}
                                         />
                                     </div>
-                                    {(taskProjectUids.length > 0 ||
-                                        (m.task_uids || []).length > 0) && (
-                                        <div className="mt-2 border-t border-gray-200 pt-2 dark:border-gray-600">
-                                            <div className="mb-1 text-gray-500">
-                                                {t(
-                                                    'goalshq.linkTasks',
-                                                    'Link existing tasks:'
-                                                )}
-                                            </div>
-                                            {linkableTasks === null ? (
-                                                <div className="text-gray-400">
-                                                    {t(
-                                                        'common.loading',
-                                                        'Loading...'
-                                                    )}
-                                                </div>
-                                            ) : linkableTasks.length === 0 ? (
-                                                <div className="text-gray-400">
-                                                    {t(
-                                                        'goalshq.noLinkableTasks',
-                                                        'No tasks available to link.'
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <div className="max-h-40 space-y-1 overflow-y-auto">
-                                                    {linkableTasks.map((tk) => (
-                                                        <label
-                                                            key={tk.uid}
-                                                            className="flex items-center gap-2"
-                                                        >
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={(
-                                                                    m.task_uids ||
-                                                                    []
-                                                                ).includes(
-                                                                    tk.uid!
-                                                                )}
-                                                                onChange={() =>
-                                                                    toggleMsTask(
-                                                                        m,
-                                                                        tk.uid!
-                                                                    )
-                                                                }
-                                                            />
-                                                            <span
-                                                                className={
-                                                                    tk.status ===
-                                                                    'done'
-                                                                        ? 'text-gray-400 line-through'
-                                                                        : ''
-                                                                }
-                                                            >
-                                                                {tk.name}
-                                                            </span>
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
+                                    <MilestoneTriggerTasks
+                                        linkedTaskUids={m.task_uids || []}
+                                        linkedProjectUids={m.project_uids || []}
+                                        onToggleTask={(uid) =>
+                                            toggleMsTask(m, uid)
+                                        }
+                                        onToggleProject={(uid) =>
+                                            toggleMsProject(m, uid)
+                                        }
+                                        readOnly={readOnly}
+                                    />
                                 </li>
                             )}
                         </React.Fragment>
