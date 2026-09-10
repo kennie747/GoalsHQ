@@ -34,6 +34,7 @@ const {
     GoalshqKeyResultEntry,
     GoalshqMilestone,
     GoalshqMilestoneTask,
+    GoalshqMilestoneProject,
     GoalshqProgressSnapshot,
     GoalshqRecord,
 } = require('../../../models');
@@ -180,14 +181,20 @@ function evaluateMilestoneTriggers(
     milestones,
     taskLinksByMilestone,
     doneTaskIds,
-    krById
+    krById,
+    projectExpansionByMilestone = new Map()
 ) {
     const achieved = [];
     for (const m of milestones) {
         if (m.status !== 'pending') continue;
         let hit = false;
 
-        const links = taskLinksByMilestone.get(m.id) || [];
+        // Union of explicitly-linked tasks and the live task set of every
+        // whole-project link. completion_mode applies to the union.
+        const explicit = taskLinksByMilestone.get(m.id) || [];
+        const projExpanded =
+            projectExpansionByMilestone.get(m.id)?.taskIds || [];
+        const links = [...new Set([...explicit, ...projExpanded])];
         if (links.length > 0) {
             const doneCount = links.filter((tid) =>
                 doneTaskIds.has(tid)
@@ -556,10 +563,9 @@ async function recomputeGoal(goalId, opts = {}) {
         const pendingMs = allMilestones.filter((m) => m.status === 'pending');
         let milestoneAchievedIds = [];
         if (pendingMs.length > 0) {
+            const pendingIds = pendingMs.map((m) => m.id);
             const links = await GoalshqMilestoneTask.findAll({
-                where: {
-                    milestone_id: { [Op.in]: pendingMs.map((m) => m.id) },
-                },
+                where: { milestone_id: { [Op.in]: pendingIds } },
             });
             const taskLinksByMilestone = new Map();
             for (const l of links) {
@@ -567,7 +573,56 @@ async function recomputeGoal(goalId, opts = {}) {
                 list.push(l.task_id);
                 taskLinksByMilestone.set(l.milestone_id, list);
             }
-            const linkedTaskIds = [...new Set(links.map((l) => l.task_id))];
+
+            // Whole-project links: expand each to the project's LIVE task set
+            // (non-excluded statuses) at evaluation time, so tasks added or
+            // removed since the link was made are always accounted for.
+            const projLinks = await GoalshqMilestoneProject.findAll({
+                where: { milestone_id: { [Op.in]: pendingIds } },
+            });
+            const projectIdsByMilestone = new Map();
+            for (const l of projLinks) {
+                const list = projectIdsByMilestone.get(l.milestone_id) || [];
+                list.push(l.project_id);
+                projectIdsByMilestone.set(l.milestone_id, list);
+            }
+            const linkedProjectIds = [
+                ...new Set(projLinks.map((l) => l.project_id)),
+            ];
+            const tasksByProject = new Map(); // project_id -> [{id,status}]
+            if (linkedProjectIds.length > 0) {
+                const prows = await Task.findAll({
+                    where: {
+                        project_id: { [Op.in]: linkedProjectIds },
+                        parent_task_id: null,
+                    },
+                    attributes: ['id', 'project_id', 'status'],
+                    raw: true,
+                });
+                for (const r of prows) {
+                    if (EXCLUDED_STATUSES.includes(Number(r.status))) continue;
+                    const list = tasksByProject.get(r.project_id) || [];
+                    list.push(r);
+                    tasksByProject.set(r.project_id, list);
+                }
+            }
+            const projectExpansionByMilestone = new Map();
+            for (const [msId, pids] of projectIdsByMilestone) {
+                const taskIds = [];
+                for (const pid of pids)
+                    for (const r of tasksByProject.get(pid) || [])
+                        taskIds.push(r.id);
+                projectExpansionByMilestone.set(msId, {
+                    taskIds: [...new Set(taskIds)],
+                });
+            }
+
+            const linkedTaskIds = [
+                ...new Set([
+                    ...links.map((l) => l.task_id),
+                    ...[...tasksByProject.values()].flat().map((r) => r.id),
+                ]),
+            ];
             const doneTaskIds = new Set();
             if (linkedTaskIds.length > 0) {
                 const rows = await Task.findAll({
@@ -585,7 +640,8 @@ async function recomputeGoal(goalId, opts = {}) {
                 pendingMs,
                 taskLinksByMilestone,
                 doneTaskIds,
-                krById
+                krById,
+                projectExpansionByMilestone
             );
             const achievedNow = new Date();
             for (const m of allMilestones) {
@@ -1266,6 +1322,24 @@ async function gcOrphans() {
     if (orphanLinkIds.length > 0) {
         removed += await GoalshqMilestoneTask.destroy({
             where: { id: { [Op.in]: orphanLinkIds } },
+        });
+    }
+
+    // Milestone whole-project links whose milestone or project is gone.
+    const orphanProjLinkIds = (
+        await GoalshqMilestoneProject.findAll({
+            attributes: ['id', 'milestone_id', 'project_id'],
+        })
+    )
+        .filter(
+            (l) =>
+                !liveMilestoneIds.has(l.milestone_id) ||
+                !liveProjectIds.has(l.project_id)
+        )
+        .map((l) => l.id);
+    if (orphanProjLinkIds.length > 0) {
+        removed += await GoalshqMilestoneProject.destroy({
+            where: { id: { [Op.in]: orphanProjLinkIds } },
         });
     }
 

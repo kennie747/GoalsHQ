@@ -701,7 +701,7 @@ async function deleteKeyResult(userId, uid) {
 /* --------------------------------------------------------------- milestones */
 
 async function serializeMilestoneFull(userId, m) {
-    const { Task } = require('../../models');
+    const { Task, Project } = require('../../models');
     const links = await repo.milestoneTaskLinks(m.id);
     const taskIds = links.map((l) => l.task_id);
     const wantedIds = [
@@ -714,6 +714,16 @@ async function serializeMilestoneFull(userId, m) {
           })
         : [];
     const uidById = new Map(tasks.map((t) => [t.id, t.uid]));
+
+    const projLinks = await repo.milestoneProjectLinks(m.id);
+    const projects = projLinks.length
+        ? await Project.findAll({
+              where: { id: projLinks.map((l) => l.project_id) },
+              attributes: ['id', 'uid'],
+          })
+        : [];
+    const projUidById = new Map(projects.map((p) => [p.id, p.uid]));
+
     let autoKrUid = null;
     if (m.auto_kr_id) {
         const kr = await repo.keyResultById(userId, m.auto_kr_id);
@@ -721,6 +731,9 @@ async function serializeMilestoneFull(userId, m) {
     }
     return s.serializeMilestone(m, {
         taskUids: taskIds.map((id) => uidById.get(id)).filter(Boolean),
+        projectUids: projLinks
+            .map((l) => projUidById.get(l.project_id))
+            .filter(Boolean),
         autoKrUid,
         expandedTaskUid:
             m.expanded_task_id && uidById.has(m.expanded_task_id)
@@ -738,7 +751,9 @@ async function serializeMilestones(userId, rows) {
     if (!rows.length) return [];
     const {
         Task,
+        Project,
         GoalshqMilestoneTask,
+        GoalshqMilestoneProject,
         GoalshqKeyResult,
     } = require('../../models');
 
@@ -765,6 +780,25 @@ async function serializeMilestones(userId, rows) {
         linksByMilestone.set(l.milestone_id, list);
     }
 
+    const projLinks = await GoalshqMilestoneProject.findAll({
+        where: { milestone_id: milestoneIds },
+        attributes: ['milestone_id', 'project_id'],
+    });
+    const projects = projLinks.length
+        ? await Project.findAll({
+              where: { id: [...new Set(projLinks.map((l) => l.project_id))] },
+              attributes: ['id', 'uid'],
+          })
+        : [];
+    const projUidById = new Map(projects.map((p) => [p.id, p.uid]));
+    const projLinksByMilestone = new Map();
+    for (const l of projLinks) {
+        const list = projLinksByMilestone.get(l.milestone_id) || [];
+        if (projUidById.has(l.project_id))
+            list.push(projUidById.get(l.project_id));
+        projLinksByMilestone.set(l.milestone_id, list);
+    }
+
     const krIds = [...new Set(rows.map((m) => m.auto_kr_id).filter(Boolean))];
     const krs = krIds.length
         ? await GoalshqKeyResult.findAll({
@@ -777,6 +811,7 @@ async function serializeMilestones(userId, rows) {
     return rows.map((m) =>
         s.serializeMilestone(m, {
             taskUids: linksByMilestone.get(m.id) || [],
+            projectUids: projLinksByMilestone.get(m.id) || [],
             autoKrUid: m.auto_kr_id
                 ? krUidById.get(m.auto_kr_id) || null
                 : null,
@@ -937,17 +972,25 @@ async function expandMilestone(userId, uid) {
         if (strategy) taskData.goal_id = strategy.goal_id;
     }
 
-    const task = await Task.create(taskData);
-    await milestone.update({ expanded_task_id: task.id });
-
-    // Auto-link the task so completing it closes this milestone.
-    await GoalshqMilestoneTask.findOrCreate({
-        where: { milestone_id: milestone.id, task_id: task.id },
-        defaults: {
-            milestone_id: milestone.id,
-            task_id: task.id,
-            user_id: userId,
-        },
+    // One transaction: the task, its back-pointer, and the trigger link must all
+    // land together — a crash between them would orphan a task with no
+    // expanded_task_id and the next expand would make another one.
+    const task = await sequelize.transaction(async (transaction) => {
+        const created = await Task.create(taskData, { transaction });
+        await milestone.update(
+            { expanded_task_id: created.id },
+            { transaction }
+        );
+        await GoalshqMilestoneTask.findOrCreate({
+            where: { milestone_id: milestone.id, task_id: created.id },
+            defaults: {
+                milestone_id: milestone.id,
+                task_id: created.id,
+                user_id: userId,
+            },
+            transaction,
+        });
+        return created;
     });
 
     await recomputeForParent(
@@ -1405,6 +1448,49 @@ async function setMilestoneTasks(userId, milestoneUid, taskUids) {
     );
 }
 
+async function setMilestoneProjects(userId, milestoneUid, projectUids) {
+    const milestone = await repo.milestoneByUid(userId, milestoneUid);
+    if (!milestone) throw new NotFoundError('Milestone not found');
+    const { GoalshqMilestoneProject } = require('../../models');
+    const wanted = new Set();
+    for (const uid of projectUids || []) {
+        // eslint-disable-next-line no-await-in-loop
+        const project = await repo.projectByUid(userId, uid);
+        if (project) wanted.add(project.id);
+    }
+    const current = new Set(
+        (await repo.milestoneProjectLinks(milestone.id)).map(
+            (l) => l.project_id
+        )
+    );
+    for (const pid of wanted) {
+        if (!current.has(pid))
+            // eslint-disable-next-line no-await-in-loop
+            await GoalshqMilestoneProject.create({
+                milestone_id: milestone.id,
+                project_id: pid,
+                user_id: userId,
+            });
+    }
+    for (const pid of current) {
+        if (!wanted.has(pid))
+            // eslint-disable-next-line no-await-in-loop
+            await GoalshqMilestoneProject.destroy({
+                where: { milestone_id: milestone.id, project_id: pid },
+            });
+    }
+    await recomputeForParent(
+        milestone.parent_type,
+        milestone.parent_id,
+        userId
+    );
+    return listMilestones(
+        userId,
+        milestone.parent_type,
+        await parentUidFor(milestone.parent_type, milestone.parent_id)
+    );
+}
+
 async function parentUidFor(parentType, parentId) {
     const { Goal, Project } = require('../../models');
     if (parentType === 'goal') return (await Goal.findByPk(parentId)).uid;
@@ -1466,5 +1552,6 @@ module.exports = {
     propagateKeyResult,
     getKeyResultDetail,
     setMilestoneTasks,
+    setMilestoneProjects,
     getReport,
 };

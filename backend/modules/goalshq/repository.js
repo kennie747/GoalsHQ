@@ -21,6 +21,7 @@ const {
     GoalshqKeyResultEntry,
     GoalshqMilestone,
     GoalshqMilestoneTask,
+    GoalshqMilestoneProject,
     GoalshqProgressSnapshot,
     GoalshqRecord,
 } = require('../../models');
@@ -412,6 +413,12 @@ async function milestoneTaskLinks(milestoneId) {
     });
 }
 
+async function milestoneProjectLinks(milestoneId) {
+    return GoalshqMilestoneProject.findAll({
+        where: { milestone_id: milestoneId },
+    });
+}
+
 module.exports = {
     goalByUid,
     goalById,
@@ -455,4 +462,5 @@ module.exports = {
     createKrEntry,
     childKeyResults,
     milestoneTaskLinks,
+    milestoneProjectLinks,
 };

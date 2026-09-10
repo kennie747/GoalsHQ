@@ -121,7 +121,12 @@ function serializeRecord(
 
 function serializeMilestone(
     m,
-    { taskUids = [], autoKrUid = null, expandedTaskUid = null } = {}
+    {
+        taskUids = [],
+        projectUids = [],
+        autoKrUid = null,
+        expandedTaskUid = null,
+    } = {}
 ) {
     return {
         uid: m.uid,
@@ -137,6 +142,7 @@ function serializeMilestone(
         auto_kr_threshold: num(m.auto_kr_threshold),
         auto_achieved: !!m.auto_achieved,
         task_uids: taskUids,
+        project_uids: projectUids,
         expanded_task_uid: expandedTaskUid,
     };
 }

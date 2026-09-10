@@ -510,6 +510,20 @@ const controller = {
         }
     },
 
+    async setMilestoneProjects(req, res, next) {
+        try {
+            ensureEnabled();
+            const milestones = await service.setMilestoneProjects(
+                requireUserId(req),
+                req.params.uid,
+                (req.body && req.body.project_uids) || []
+            );
+            res.json({ milestones });
+        } catch (err) {
+            next(err);
+        }
+    },
+
     async getReport(req, res, next) {
         try {
             ensureEnabled();

@@ -130,6 +130,8 @@ const GoalshqKeyResultEntry =
 const GoalshqMilestoneTask = require('../modules/goalshq/models/milestoneTask')(
     sequelize
 );
+const GoalshqMilestoneProject =
+    require('../modules/goalshq/models/milestoneProject')(sequelize);
 
 User.hasMany(Area, { foreignKey: 'user_id' });
 Area.belongsTo(User, { foreignKey: 'user_id' });
@@ -477,6 +479,15 @@ GoalshqMilestoneTask.belongsTo(GoalshqMilestone, {
     foreignKey: 'milestone_id',
 });
 
+// Milestone ↔ whole-project auto-achieve links.
+GoalshqMilestone.hasMany(GoalshqMilestoneProject, {
+    foreignKey: 'milestone_id',
+    as: 'ProjectLinks',
+});
+GoalshqMilestoneProject.belongsTo(GoalshqMilestone, {
+    foreignKey: 'milestone_id',
+});
+
 // Task gets KeyResult only (the "batch/quota task" primitive) — not
 // Milestone (redundant with a task's own due_date/status) or ProgressSnapshot
 // (tasks are too short-lived/numerous to be worth daily-snapshotting). A
@@ -626,6 +637,7 @@ module.exports = {
     GoalshqRecord,
     GoalshqKeyResultEntry,
     GoalshqMilestoneTask,
+    GoalshqMilestoneProject,
     Backup,
     OIDCIdentity,
     OIDCStateNonce,

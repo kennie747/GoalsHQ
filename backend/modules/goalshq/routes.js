@@ -69,6 +69,10 @@ router.patch('/goalshq/milestones/:uid', controller.updateMilestone);
 router.delete('/goalshq/milestones/:uid', controller.deleteMilestone);
 router.post('/goalshq/milestones/:uid/expand', controller.expandMilestone);
 router.put('/goalshq/milestones/:uid/tasks', controller.setMilestoneTasks);
+router.put(
+    '/goalshq/milestones/:uid/projects',
+    controller.setMilestoneProjects
+);
 
 // Records ledger (Part 2)
 router.get(

@@ -12,6 +12,7 @@ const {
     GoalshqKeyResultEntry,
     GoalshqMilestone,
     GoalshqMilestoneTask,
+    GoalshqMilestoneProject,
     GoalshqRecord,
     GoalshqProgressSnapshot,
 } = require('../../models');
@@ -28,6 +29,7 @@ async function clear() {
         GoalshqKeyResultEntry.destroy({ truncate: true }),
         GoalshqMilestone.destroy({ truncate: true }),
         GoalshqMilestoneTask.destroy({ truncate: true }),
+        GoalshqMilestoneProject.destroy({ truncate: true }),
         GoalshqRecord.destroy({ truncate: true }),
         GoalshqProgressSnapshot.destroy({ truncate: true }),
     ]);
@@ -233,6 +235,130 @@ describe('GoalsHQ Part 2 — records, KR trees, milestone triggers, report', () 
             where: { uid: ms.body.milestone.uid },
         });
         expect(kept.status).toBe('achieved');
+    });
+
+    describe('whole-project milestone triggers', () => {
+        let project;
+        let msUid;
+        const mkTask = (name, status = Task.STATUS.NOT_STARTED) =>
+            Task.create({
+                user_id: user.id,
+                name,
+                project_id: project.id,
+                status,
+            });
+
+        beforeEach(async () => {
+            project = await Project.create({
+                user_id: user.id,
+                name: 'Real Estate ops',
+                goal_id: goal.id,
+                status: 'in_progress',
+            });
+            const ms = await agent
+                .post(`/api/goalshq/goal/${goal.uid}/milestones`)
+                .send({ title: 'Ops project done' });
+            msUid = ms.body.milestone.uid;
+        });
+
+        it('PUT .../projects round-trips project_uids on the serialized milestone', async () => {
+            const res = await agent
+                .put(`/api/goalshq/milestones/${msUid}/projects`)
+                .send({ project_uids: [project.uid] });
+            expect(res.status).toBe(200);
+            const m = res.body.milestones.find((x) => x.uid === msUid);
+            expect(m.project_uids).toEqual([project.uid]);
+
+            const detail = await agent.get(`/api/goalshq/goals/${goal.uid}`);
+            expect(
+                detail.body.goal.milestones.find((x) => x.uid === msUid)
+                    .project_uids
+            ).toEqual([project.uid]);
+        });
+
+        it('mode "all": achieves only when every active task in the project is done, and stays live as tasks are added', async () => {
+            const t1 = await mkTask('t1');
+            const t2 = await mkTask('t2');
+            await agent
+                .put(`/api/goalshq/milestones/${msUid}/projects`)
+                .send({ project_uids: [project.uid] });
+
+            await t1.update({ status: Task.STATUS.DONE });
+            await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+            expect(
+                (await GoalshqMilestone.findOne({ where: { uid: msUid } }))
+                    .status
+            ).toBe('pending');
+
+            await t2.update({ status: Task.STATUS.DONE });
+            await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+            let m = await GoalshqMilestone.findOne({ where: { uid: msUid } });
+            expect(m.status).toBe('achieved');
+            expect(m.auto_achieved).toBe(true);
+
+            // A task added later re-opens the still-relevant milestone.
+            await m.update({ status: 'pending', auto_achieved: false });
+            await mkTask('t3');
+            await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+            expect(
+                (await GoalshqMilestone.findOne({ where: { uid: msUid } }))
+                    .status
+            ).toBe('pending');
+        });
+
+        it('excludes archived/cancelled tasks from the denominator', async () => {
+            await mkTask('done-1', Task.STATUS.DONE);
+            await mkTask('done-2', Task.STATUS.DONE);
+            await mkTask('archived', Task.STATUS.ARCHIVED);
+            await agent
+                .put(`/api/goalshq/milestones/${msUid}/projects`)
+                .send({ project_uids: [project.uid] });
+            await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+            expect(
+                (await GoalshqMilestone.findOne({ where: { uid: msUid } }))
+                    .status
+            ).toBe('achieved');
+        });
+
+        it('unions a whole-project link with an explicit task link', async () => {
+            const p1 = await mkTask('p1');
+            const outside = await Task.create({
+                user_id: user.id,
+                name: 'outside',
+                goal_id: goal.id,
+                status: Task.STATUS.NOT_STARTED,
+            });
+            await agent
+                .put(`/api/goalshq/milestones/${msUid}/projects`)
+                .send({ project_uids: [project.uid] });
+            await agent
+                .put(`/api/goalshq/milestones/${msUid}/tasks`)
+                .send({ task_uids: [outside.uid] });
+
+            await p1.update({ status: Task.STATUS.DONE });
+            await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+            expect(
+                (await GoalshqMilestone.findOne({ where: { uid: msUid } }))
+                    .status
+            ).toBe('pending'); // project done, explicit task not
+
+            await outside.update({ status: Task.STATUS.DONE });
+            await agent.post(`/api/goalshq/goals/${goal.uid}/recompute`);
+            expect(
+                (await GoalshqMilestone.findOne({ where: { uid: msUid } }))
+                    .status
+            ).toBe('achieved');
+        });
+
+        it('gcOrphans removes links whose project is gone', async () => {
+            await agent
+                .put(`/api/goalshq/milestones/${msUid}/projects`)
+                .send({ project_uids: [project.uid] });
+            await Task.destroy({ where: { project_id: project.id } });
+            await project.destroy();
+            await rollup.gcOrphans();
+            expect(await GoalshqMilestoneProject.count()).toBe(0);
+        });
     });
 
     it('report assembles quantitative panels + a narrative (static fallback)', async () => {

@@ -8,7 +8,7 @@ const TASK_INCLUDES = [
     },
     {
         model: Project,
-        attributes: ['id', 'name', 'uid', 'image_url', 'color'],
+        attributes: ['id', 'name', 'uid', 'image_url', 'color', 'status'],
         required: false,
     },
     {
