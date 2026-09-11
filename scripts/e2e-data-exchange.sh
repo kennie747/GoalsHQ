@@ -62,6 +62,6 @@ APP_URL="$FRONTEND_URL" \
   E2E_EMAIL="${E2E_EMAIL:-test@tududi.com}" \
   E2E_PASSWORD="${E2E_PASSWORD:-password123}" \
   CI=true \
-  npx playwright test data-exchange \
+  npx playwright test e2e/tests/data-exchange.spec.ts \
     --config="${PW_CONFIG:-e2e/playwright.config.ts}" \
     --project=Chromium
