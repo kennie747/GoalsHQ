@@ -12,6 +12,7 @@ const {
     verifyUserEmail,
 } = require('./registrationService');
 const peopleService = require('../people/service');
+const goalshqService = require('../goalshq/service');
 const packageJson = require('../../../package.json');
 const {
     ValidationError,
@@ -172,7 +173,10 @@ class AuthService {
                         appearance: user.appearance,
                         timezone: user.timezone,
                         avatar_image: user.avatar_image,
-                        features: features || {},
+                        features: {
+                            ...(features || {}),
+                            goalshq_enabled: goalshqService.isEnabled(),
+                        },
                         ui_settings: uiSettings || null,
                         is_admin: admin,
                     },

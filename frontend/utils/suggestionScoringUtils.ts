@@ -1,9 +1,14 @@
 import { Task } from '../entities/Task';
 import { Project } from '../entities/Project';
+import { GoalSummary } from '../entities/Goal';
+import { GoalshqHealth } from '../entities/GoalSettings';
 
 export type SuggestionReason =
     | 'due'
     | 'goal'
+    | 'goal_at_risk'
+    | 'strategy'
+    | 'strategy_at_risk'
     | 'fits_now'
     | 'revive'
     | 'high'
@@ -21,6 +26,92 @@ export interface SuggestionMeta {
 export interface SuggestionOpts {
     balanceMode?: boolean;
     contextFilter?: string;
+}
+
+const AT_RISK_HEALTH: GoalshqHealth[] = ['at_risk', 'off_track'];
+const HEALTH_RISK_RANK: Record<GoalshqHealth, number> = {
+    off_track: 0,
+    at_risk: 1,
+    on_track: 2,
+    no_data: 3,
+};
+
+/** uid -> GoalsHQ health, for the "advances an at-risk goal" scoring bonus. */
+export function buildGoalHealthMap(
+    goalSummaries: GoalSummary[]
+): Map<string, GoalshqHealth> {
+    return new Map(goalSummaries.map((g) => [g.uid, g.execution_health]));
+}
+
+export interface GoalInfo {
+    title: string;
+    status: string;
+    health: GoalshqHealth;
+}
+
+/**
+ * uid -> {title, status, health}, for tasks linked directly to a Goal with no
+ * project (`task.goal_uid`) — the rollup engine's "direct bucket" case, which
+ * bypasses the Strategy tier entirely. A task's *project* usually embeds its
+ * own Goal object (title/status included), so this fuller lookup is only
+ * needed when there's no project to read that from.
+ */
+export function buildGoalInfoMap(
+    goalSummaries: GoalSummary[]
+): Map<string, GoalInfo> {
+    return new Map(
+        goalSummaries.map((g) => [
+            g.uid,
+            { title: g.title, status: g.status, health: g.execution_health },
+        ])
+    );
+}
+
+export interface StrategyAttribution {
+    uid: string;
+    name: string;
+    health: GoalshqHealth;
+}
+
+/**
+ * project id -> the Strategy actually driving that project, for Strategy-level
+ * (not just Goal-level) attribution in the Today worksheet. A project linked
+ * to more than one strategy (real, since Strategy<->Project is many-to-many —
+ * see docs/goalshq/adr/0002-first-class-integration.md) picks the riskiest one
+ * to surface, since that's the one worth a user's attention.
+ */
+export function buildProjectStrategyMap(
+    goalSummaries: GoalSummary[],
+    projects: Project[]
+): Map<number, StrategyAttribution> {
+    const projectIdByUid = new Map(
+        projects
+            .filter((p) => p.uid && p.id != null)
+            .map((p) => [p.uid as string, p.id as number])
+    );
+
+    const map = new Map<number, StrategyAttribution>();
+    goalSummaries.forEach((goal) => {
+        goal.strategies.forEach((strat) => {
+            strat.project_uids.forEach((uid) => {
+                const projectId = projectIdByUid.get(uid);
+                if (projectId == null) return;
+                const existing = map.get(projectId);
+                if (
+                    !existing ||
+                    HEALTH_RISK_RANK[strat.summary.health] <
+                        HEALTH_RISK_RANK[existing.health]
+                ) {
+                    map.set(projectId, {
+                        uid: strat.uid,
+                        name: strat.name,
+                        health: strat.summary.health,
+                    });
+                }
+            });
+        });
+    });
+    return map;
 }
 
 interface AreaStats {
@@ -59,10 +150,7 @@ function isSomedayTask(task: Task): boolean {
 }
 
 export function computeAreaStats(projects: Project[]): AreaStats[] {
-    const map = new Map<
-        string,
-        { color: string; total: number }
-    >();
+    const map = new Map<string, { color: string; total: number }>();
 
     projects.forEach((p) => {
         const areaObj = (p as any).Area ?? p.area;
@@ -99,7 +187,11 @@ function isEligibleForSuggestion(task: Task): boolean {
 
     if (task.due_date) {
         const due = new Date(task.due_date).getTime();
-        if (!Number.isNaN(due) && due > now + DUE_DATE_HORIZON_DAYS * 86_400_000) return false;
+        if (
+            !Number.isNaN(due) &&
+            due > now + DUE_DATE_HORIZON_DAYS * 86_400_000
+        )
+            return false;
     }
 
     return true;
@@ -108,12 +200,12 @@ function isEligibleForSuggestion(task: Task): boolean {
 // Build one-per-project candidate pool: one next action per active project + all orphan tasks.
 // Uses the task's own embedded Project.status (from getTaskIncludeConfigLight) so we don't
 // depend on ID-matching against localProjects, which can silently fail.
-export function buildCandidatePool(
-    tasks: Task[],
-    projects: Project[]
-): Task[] {
+export function buildCandidatePool(tasks: Task[], projects: Project[]): Task[] {
     const pendingTasks = tasks.filter(
-        (t) => isPendingStatus(t.status) && !isSomedayTask(t) && isEligibleForSuggestion(t)
+        (t) =>
+            isPendingStatus(t.status) &&
+            !isSomedayTask(t) &&
+            isEligibleForSuggestion(t)
     );
 
     // Group pending tasks by project_id, reading status from the embedded Project object
@@ -168,7 +260,10 @@ export function scoreCandidate(
     task: Task,
     projects: Project[],
     areaStats: AreaStats[],
-    opts: SuggestionOpts = {}
+    opts: SuggestionOpts = {},
+    goalHealthByUid: Map<string, GoalshqHealth> = new Map(),
+    strategyByProjectId: Map<number, StrategyAttribution> = new Map(),
+    goalInfoByUid: Map<string, GoalInfo> = new Map()
 ): SuggestionMeta {
     const project = projects.find((p) => p.id === task.project_id);
     const areaObj = project ? ((project as any).Area ?? project.area) : null;
@@ -194,12 +289,62 @@ export function scoreCandidate(
         }
     }
 
-    // Goal nudge: task belongs to a project serving an active goal
-    if (reason === 'next_step') {
-        const goalObj = project ? ((project as any).Goal ?? (project as any).goal) : null;
-        if (goalObj && goalObj.status === 'active') {
+    // Strategy nudge: prefer attributing to the Strategy actually driving this
+    // project (the more specific "engine") over its parent Goal. Only projects
+    // with no strategy link (a "direct" goal project) fall back to goal-level
+    // attribution below. A strategy GoalsHQ has flagged at_risk/off_track gets
+    // a stronger nudge, same as the goal-level case.
+    const strategyAttribution = task.project_id
+        ? strategyByProjectId.get(task.project_id)
+        : undefined;
+    if (reason === 'next_step' && strategyAttribution) {
+        if (AT_RISK_HEALTH.includes(strategyAttribution.health)) {
+            score += 20;
+            reason = 'strategy_at_risk';
+        } else {
             score += 12;
-            reason = 'goal';
+            reason = 'strategy';
+        }
+    }
+
+    // Goal nudge: task belongs to a project serving an active goal, with no
+    // strategy tier of its own (a "direct" project). A goal that GoalsHQ has
+    // flagged at_risk/off_track gets a stronger nudge — this is what surfaces
+    // "advances an at-risk goal" in the Today worksheet (Phase C) rather than
+    // just "advances an active goal".
+    if (reason === 'next_step') {
+        const goalObj = project
+            ? ((project as any).Goal ?? (project as any).goal)
+            : null;
+        if (goalObj && goalObj.status === 'active') {
+            const health = goalObj.uid
+                ? goalHealthByUid.get(goalObj.uid)
+                : undefined;
+            if (health && AT_RISK_HEALTH.includes(health)) {
+                score += 20;
+                reason = 'goal_at_risk';
+            } else {
+                score += 12;
+                reason = 'goal';
+            }
+        }
+    }
+
+    // Goal nudge, no-project variant: a task can be linked straight to a Goal
+    // with no Project at all (`task.goal_uid`) — the rollup engine's "direct
+    // bucket". No project means no Strategy link is even possible, so this
+    // only ever attributes at the Goal level, same slack as the project case.
+    const taskGoalUid = (task as any).goal_uid as string | null | undefined;
+    if (reason === 'next_step' && !project && taskGoalUid) {
+        const info = goalInfoByUid.get(taskGoalUid);
+        if (info && info.status === 'active') {
+            if (AT_RISK_HEALTH.includes(info.health)) {
+                score += 20;
+                reason = 'goal_at_risk';
+            } else {
+                score += 12;
+                reason = 'goal';
+            }
         }
     }
 
@@ -207,8 +352,7 @@ export function scoreCandidate(
     if (opts.contextFilter && reason === 'next_step') {
         const hasContextTag = (task.tags ?? []).some(
             (tag) =>
-                tag.name?.toLowerCase() ===
-                opts.contextFilter?.toLowerCase()
+                tag.name?.toLowerCase() === opts.contextFilter?.toLowerCase()
         );
         if (hasContextTag) {
             score += 10;
@@ -253,7 +397,12 @@ export function scoreCandidate(
             (Date.now() - new Date(refDate).getTime()) / 86_400_000
         );
     }
-    if (reason === 'next_step' && agingDays >= 60 && !task.project_id && !hasPriority(task)) {
+    if (
+        reason === 'next_step' &&
+        agingDays >= 60 &&
+        !task.project_id &&
+        !hasPriority(task)
+    ) {
         reason = 'aging_review';
     }
 
@@ -275,9 +424,47 @@ export function scoreCandidate(
             break;
         }
         case 'goal': {
-            const goalObj = project ? ((project as any).Goal ?? (project as any).goal) : null;
-            reasonLabel = goalObj ? `Advances: ${goalObj.title}` : 'Advances an active goal';
+            const goalObj = project
+                ? ((project as any).Goal ?? (project as any).goal)
+                : null;
+            const goalTitle =
+                goalObj?.title ??
+                (taskGoalUid
+                    ? goalInfoByUid.get(taskGoalUid)?.title
+                    : undefined);
+            reasonLabel = goalTitle
+                ? `Advances: ${goalTitle}`
+                : 'Advances an active goal';
             reasonColor = areaColor;
+            break;
+        }
+        case 'goal_at_risk': {
+            const goalObj = project
+                ? ((project as any).Goal ?? (project as any).goal)
+                : null;
+            const goalTitle =
+                goalObj?.title ??
+                (taskGoalUid
+                    ? goalInfoByUid.get(taskGoalUid)?.title
+                    : undefined);
+            reasonLabel = goalTitle
+                ? `Advances an at-risk goal: ${goalTitle}`
+                : 'Advances an at-risk goal';
+            reasonColor = '#f59e0b';
+            break;
+        }
+        case 'strategy': {
+            reasonLabel = strategyAttribution
+                ? `Advances: ${strategyAttribution.name}`
+                : 'Advances an active strategy';
+            reasonColor = areaColor;
+            break;
+        }
+        case 'strategy_at_risk': {
+            reasonLabel = strategyAttribution
+                ? `Advances an at-risk strategy: ${strategyAttribution.name}`
+                : 'Advances an at-risk strategy';
+            reasonColor = '#f59e0b';
             break;
         }
         case 'fits_now':
@@ -317,29 +504,47 @@ export function scoreCandidate(
 
 function hasPriority(task: Task): boolean {
     const p = task.priority;
-    return p === 'high' || p === 2 || p === 'medium' || p === 1 || p === 'low' || p === 0;
+    return (
+        p === 'high' ||
+        p === 2 ||
+        p === 'medium' ||
+        p === 1 ||
+        p === 'low' ||
+        p === 0
+    );
 }
 
 // Returns 0=high, 1=medium, 2=low, 3=none — used as the primary sort key.
 function priorityTier(task: Task): number {
     const p = task.priority;
-    if (p === 'high'   || p === 2) return 0;
+    if (p === 'high' || p === 2) return 0;
     if (p === 'medium' || p === 1) return 1;
-    if (p === 'low'    || p === 0) return 2;
+    if (p === 'low' || p === 0) return 2;
     return 3;
 }
 
 export function scoreAndSortSuggestedTasks(
     tasks: Task[],
     projects: Project[],
-    opts: SuggestionOpts = {}
+    opts: SuggestionOpts = {},
+    goalHealthByUid: Map<string, GoalshqHealth> = new Map(),
+    strategyByProjectId: Map<number, StrategyAttribution> = new Map(),
+    goalInfoByUid: Map<string, GoalInfo> = new Map()
 ): Array<Task & { _suggestionMeta: SuggestionMeta }> {
     const areaStats = computeAreaStats(projects);
     const candidates = buildCandidatePool(tasks, projects);
 
     const scored = candidates.map((task) => ({
         ...task,
-        _suggestionMeta: scoreCandidate(task, projects, areaStats, opts),
+        _suggestionMeta: scoreCandidate(
+            task,
+            projects,
+            areaStats,
+            opts,
+            goalHealthByUid,
+            strategyByProjectId,
+            goalInfoByUid
+        ),
     }));
 
     scored.sort((a, b) => b._suggestionMeta.score - a._suggestionMeta.score);
@@ -354,8 +559,12 @@ export function scoreAndSortSuggestedTasks(
     });
 
     // Stale tasks are informational nudges — cap at 1 and push to the end.
-    const nonStale = deduped.filter((t) => t._suggestionMeta.reason !== 'aging_review');
-    const stale    = deduped.filter((t) => t._suggestionMeta.reason === 'aging_review');
+    const nonStale = deduped.filter(
+        (t) => t._suggestionMeta.reason !== 'aging_review'
+    );
+    const stale = deduped.filter(
+        (t) => t._suggestionMeta.reason === 'aging_review'
+    );
 
     // Final ordering by composite bucket key: (priorityTier * 2) + isOrphan
     // Bucket 0: project + high    Bucket 1: orphan + high

@@ -1,73 +1,39 @@
 /**
- * GoalsHQ ↔ tududi contract tests — the upstream-merge tripwire.
+ * GoalsHQ ↔ core contract tests.
  *
- * GoalsHQ is built as an isolated module that depends on a small, explicit slice
- * of tududi core (see backend/modules/goalshq/core/tududi.js). If an upstream
- * merge renames/moves/removes any of the surface asserted here, this file fails
- * immediately and points at the broken assumption — before users hit it.
+ * GoalsHQ is now a first-class part of core (see
+ * docs/goalshq/adr/0002-first-class-integration.md — supersedes the isolation
+ * architecture in adr/0001). These tests guard the concrete assumptions the
+ * rollup engine and repository make about core Task/Goal/Project shape, so a
+ * future refactor that drifts from them fails loudly here instead of via a
+ * confusing GoalsHQ bug report.
  */
 
-const path = require('path');
-
 describe('GoalsHQ core contract', () => {
-    describe('tududi surface the compat shim relies on', () => {
-        const shim = require('../../modules/goalshq/core/tududi');
-
-        it('exposes the core models', () => {
-            expect(shim.Goal).toBeDefined();
-            expect(shim.Project).toBeDefined();
-            expect(shim.Task).toBeDefined();
-            expect(shim.User).toBeDefined();
-            expect(shim.sequelize).toBeDefined();
-        });
+    describe('task status/priority surface the rollup engine relies on', () => {
+        const taskStatus = require('../../modules/goalshq/operations/task-status');
 
         it('exposes Task.STATUS with DONE / ARCHIVED / CANCELLED', () => {
-            expect(shim.TASK_STATUS).toBeDefined();
-            expect(typeof shim.TASK_STATUS.DONE).toBe('number');
-            expect(typeof shim.TASK_STATUS.ARCHIVED).toBe('number');
-            expect(typeof shim.TASK_STATUS.CANCELLED).toBe('number');
+            expect(taskStatus.TASK_STATUS).toBeDefined();
+            expect(typeof taskStatus.TASK_STATUS.DONE).toBe('number');
+            expect(typeof taskStatus.TASK_STATUS.ARCHIVED).toBe('number');
+            expect(typeof taskStatus.TASK_STATUS.CANCELLED).toBe('number');
         });
 
         it('exposes Task.PRIORITY with LOW / MEDIUM / HIGH', () => {
-            expect(shim.TASK_PRIORITY).toBeDefined();
-            expect(typeof shim.TASK_PRIORITY.LOW).toBe('number');
-            expect(typeof shim.TASK_PRIORITY.MEDIUM).toBe('number');
-            expect(typeof shim.TASK_PRIORITY.HIGH).toBe('number');
+            expect(taskStatus.TASK_PRIORITY).toBeDefined();
+            expect(typeof taskStatus.TASK_PRIORITY.LOW).toBe('number');
+            expect(typeof taskStatus.TASK_PRIORITY.MEDIUM).toBe('number');
+            expect(typeof taskStatus.TASK_PRIORITY.HIGH).toBe('number');
         });
 
         it('isDone / isExcluded behave as GoalsHQ rollup expects', () => {
-            expect(shim.isDone({ status: shim.TASK_STATUS.DONE })).toBe(true);
-            expect(shim.isDone({ status: shim.TASK_STATUS.IN_PROGRESS })).toBe(
-                false
-            );
-            expect(shim.isExcluded({ status: shim.TASK_STATUS.ARCHIVED })).toBe(
-                true
-            );
-            expect(
-                shim.isExcluded({ status: shim.TASK_STATUS.CANCELLED })
-            ).toBe(true);
-            expect(
-                shim.isExcluded({ status: shim.TASK_STATUS.NOT_STARTED })
-            ).toBe(false);
-        });
-
-        it('exposes error classes, config, logService and auth helper', () => {
-            expect(shim.errors.NotFoundError).toBeDefined();
-            expect(shim.errors.ValidationError).toBeDefined();
-            expect(shim.errors.ConflictError).toBeDefined();
-            expect(shim.config).toHaveProperty('environment');
-            expect(typeof shim.logService.logError).toBe('function');
-            expect(typeof shim.getAuthenticatedUserId).toBe('function');
-        });
-
-        it('exposes timezone helpers used for snapshot dating', () => {
-            expect(typeof shim.timezone.getCurrentDateInTimezone).toBe(
-                'function'
-            );
-            expect(typeof shim.timezone.getSafeTimezone).toBe('function');
-            expect(shim.todayInUserTz({ timezone: 'UTC' })).toMatch(
-                /^\d{4}-\d{2}-\d{2}$/
-            );
+            const { TASK_STATUS, isDone, isExcluded } = taskStatus;
+            expect(isDone({ status: TASK_STATUS.DONE })).toBe(true);
+            expect(isDone({ status: TASK_STATUS.IN_PROGRESS })).toBe(false);
+            expect(isExcluded({ status: TASK_STATUS.ARCHIVED })).toBe(true);
+            expect(isExcluded({ status: TASK_STATUS.CANCELLED })).toBe(true);
+            expect(isExcluded({ status: TASK_STATUS.NOT_STARTED })).toBe(false);
         });
     });
 
@@ -95,41 +61,43 @@ describe('GoalsHQ core contract', () => {
         });
     });
 
-    describe('GoalsHQ models register on the shared instance', () => {
-        const registry = require('../../modules/goalshq/models');
+    describe('GoalsHQ models are core-registered', () => {
+        const models = require('../../models');
 
-        it('defines all six goalshq_* tables', () => {
-            expect(registry.GoalshqStrategy.tableName).toBe(
-                'goalshq_strategies'
-            );
-            expect(registry.GoalshqProjectStrategy.tableName).toBe(
+        it('defines all six goalshq_* tables on the shared instance', () => {
+            expect(models.GoalshqStrategy.tableName).toBe('goalshq_strategies');
+            expect(models.GoalshqProjectStrategy.tableName).toBe(
                 'goalshq_project_strategies'
             );
-            expect(registry.GoalshqGoalSettings.tableName).toBe(
+            expect(models.GoalshqGoalSettings.tableName).toBe(
                 'goalshq_goal_settings'
             );
-            expect(registry.GoalshqKeyResult.tableName).toBe(
+            expect(models.GoalshqKeyResult.tableName).toBe(
                 'goalshq_key_results'
             );
-            expect(registry.GoalshqMilestone.tableName).toBe(
+            expect(models.GoalshqMilestone.tableName).toBe(
                 'goalshq_milestones'
             );
-            expect(registry.GoalshqProgressSnapshot.tableName).toBe(
+            expect(models.GoalshqProgressSnapshot.tableName).toBe(
                 'goalshq_progress_snapshots'
             );
         });
 
-        it('shares tududi’s sequelize instance (no separate connection)', () => {
-            expect(registry.sequelize).toBe(require('../../models').sequelize);
+        it('Goal <-> Strategy and Strategy <-> Project associations are wired', () => {
+            expect(models.Goal.associations.Strategies).toBeDefined();
+            expect(models.GoalshqStrategy.associations.Goal).toBeDefined();
+            expect(models.GoalshqStrategy.associations.Projects).toBeDefined();
+            expect(models.Project.associations.Strategies).toBeDefined();
         });
     });
 
-    it('does not edit backend/models/index.js (no goalshq refs in core registry)', () => {
-        const fs = require('fs');
-        const src = fs.readFileSync(
-            path.join(__dirname, '../../models/index.js'),
-            'utf8'
-        );
-        expect(src.toLowerCase()).not.toContain('goalshq');
+    describe('project <-> strategy is many-to-many', () => {
+        const { GoalshqProjectStrategy } = require('../../models');
+
+        it('has no unique constraint on project_id alone', () => {
+            const projectIdAttr =
+                GoalshqProjectStrategy.rawAttributes.project_id;
+            expect(projectIdAttr.unique).not.toBe(true);
+        });
     });
 });

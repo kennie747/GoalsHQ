@@ -4,6 +4,7 @@ const {
     Project,
     Area,
     Person,
+    Goal,
     sequelize,
 } = require('../../../models');
 const { Op, QueryTypes } = require('sequelize');
@@ -100,6 +101,12 @@ async function filterTasksByParams(
         {
             model: Area,
             attributes: ['id', 'name', 'uid', 'color'],
+            required: false,
+        },
+        {
+            model: Goal,
+            as: 'Goal',
+            attributes: ['id', 'title', 'uid', 'status'],
             required: false,
         },
         {
@@ -480,6 +487,12 @@ function getTaskIncludeConfig() {
             required: false,
         },
         {
+            model: Goal,
+            as: 'Goal',
+            attributes: ['id', 'title', 'uid', 'status'],
+            required: false,
+        },
+        {
             model: Task,
             as: 'Subtasks',
             include: [
@@ -523,6 +536,12 @@ function getTaskIncludeConfigLight() {
         {
             model: Area,
             attributes: ['id', 'name', 'uid', 'color'],
+            required: false,
+        },
+        {
+            model: Goal,
+            as: 'Goal',
+            attributes: ['id', 'title', 'uid', 'status'],
             required: false,
         },
     ];

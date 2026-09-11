@@ -5,7 +5,7 @@ import { Note } from '../entities/Note';
 import { Task } from '../entities/Task';
 import { Tag } from '../entities/Tag';
 import { InboxItem } from '../entities/InboxItem';
-import { Goal } from '../entities/Goal';
+import { Goal, GoalSummary } from '../entities/Goal';
 import { Person } from '../entities/Person';
 
 interface NotesStore {
@@ -122,6 +122,8 @@ interface UserSettingsStore {
     setAiAssistantEnabled: (enabled: boolean) => void;
     showTaskContextMenu: boolean;
     setShowTaskContextMenu: (enabled: boolean) => void;
+    goalshqEnabled: boolean;
+    setGoalshqEnabled: (enabled: boolean) => void;
 }
 
 interface GoalsStore {
@@ -133,6 +135,18 @@ interface GoalsStore {
     setLoading: (isLoading: boolean) => void;
     setError: (isError: boolean) => void;
     loadGoals: (forceReload?: boolean) => Promise<void>;
+}
+
+/** Goal summaries with their GoalsHQ strategy/health rollups (list view + sidebar). */
+interface StrategiesStore {
+    goalSummaries: GoalSummary[];
+    isLoading: boolean;
+    isError: boolean;
+    hasLoaded: boolean;
+    setGoalSummaries: (goalSummaries: GoalSummary[]) => void;
+    setLoading: (isLoading: boolean) => void;
+    setError: (isError: boolean) => void;
+    loadGoalSummaries: (forceReload?: boolean) => Promise<void>;
 }
 
 interface PeopleStore {
@@ -162,6 +176,7 @@ interface StoreState {
     notesStore: NotesStore;
     areasStore: AreasStore;
     goalsStore: GoalsStore;
+    strategiesStore: StrategiesStore;
     projectsStore: ProjectsStore;
     tagsStore: TagsStore;
     peopleStore: PeopleStore;
@@ -316,6 +331,66 @@ export const useStore = create<StoreState>((set: any) => ({
                 set((state) => ({
                     goalsStore: {
                         ...state.goalsStore,
+                        isError: true,
+                        isLoading: false,
+                        hasLoaded: true,
+                    },
+                }));
+            }
+        },
+    },
+    strategiesStore: {
+        goalSummaries: [],
+        isLoading: false,
+        isError: false,
+        hasLoaded: false,
+        setGoalSummaries: (goalSummaries) =>
+            set((state) => ({
+                strategiesStore: { ...state.strategiesStore, goalSummaries },
+            })),
+        setLoading: (isLoading) =>
+            set((state) => ({
+                strategiesStore: { ...state.strategiesStore, isLoading },
+            })),
+        setError: (isError) =>
+            set((state) => ({
+                strategiesStore: { ...state.strategiesStore, isError },
+            })),
+        loadGoalSummaries: async (forceReload = false) => {
+            const state = useStore.getState();
+            if (state.strategiesStore.isLoading) return;
+            if (state.strategiesStore.hasLoaded && !forceReload) return;
+
+            const { fetchGoalshqGoals } = await import(
+                '../utils/goalsHqService'
+            );
+
+            set((state) => ({
+                strategiesStore: {
+                    ...state.strategiesStore,
+                    isLoading: true,
+                    isError: false,
+                },
+            }));
+
+            try {
+                const goalSummaries = await fetchGoalshqGoals();
+                set((state) => ({
+                    strategiesStore: {
+                        ...state.strategiesStore,
+                        goalSummaries,
+                        isLoading: false,
+                        hasLoaded: true,
+                    },
+                }));
+            } catch (error) {
+                console.error(
+                    'loadGoalSummaries: Failed to load strategy overview:',
+                    error
+                );
+                set((state) => ({
+                    strategiesStore: {
+                        ...state.strategiesStore,
                         isError: true,
                         isLoading: false,
                         hasLoaded: true,
@@ -1036,6 +1111,14 @@ export const useStore = create<StoreState>((set: any) => ({
                 userSettingsStore: {
                     ...state.userSettingsStore,
                     showTaskContextMenu: enabled,
+                },
+            })),
+        goalshqEnabled: true,
+        setGoalshqEnabled: (enabled) =>
+            set((state) => ({
+                userSettingsStore: {
+                    ...state.userSettingsStore,
+                    goalshqEnabled: enabled,
                 },
             })),
     },

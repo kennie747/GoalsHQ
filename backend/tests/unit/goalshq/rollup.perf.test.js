@@ -8,7 +8,6 @@
  */
 
 const { sequelize, Goal, Project, Task } = require('../../../models');
-require('../../../modules/goalshq/models');
 const rollup = require('../../../modules/goalshq/operations/rollup');
 const repo = require('../../../modules/goalshq/repository');
 const { createTestUser } = require('../../helpers/testUtils');

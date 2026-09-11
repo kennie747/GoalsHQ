@@ -33,6 +33,8 @@ const getCronExpression = (frequency) => {
         deferred_tasks: '*/5 * * * *',
         due_tasks: '*/15 * * * *',
         due_projects: '*/15 * * * *',
+        carryover_classify:
+            process.env.CARRYOVER_CLASSIFY_CRON || '0 */4 * * *',
     };
     return expressions[frequency];
 };
@@ -46,6 +48,8 @@ const createJobHandler = (frequency) => async () => {
         await processDueTasks();
     } else if (frequency === 'due_projects') {
         await processDueProjects();
+    } else if (frequency === 'carryover_classify') {
+        await processCarryoverClassification();
     } else {
         await processSummariesForFrequency(frequency);
     }
@@ -65,6 +69,7 @@ const createJobEntries = () => {
         'deferred_tasks',
         'due_tasks',
         'due_projects',
+        'carryover_classify',
     ];
 
     return frequencies.map((frequency) => {
@@ -165,6 +170,16 @@ const processDueProjects = async () => {
     }
 };
 
+const processCarryoverClassification = async () => {
+    try {
+        const { classifyOverdueTasks } = require('./carryover/service');
+        const result = await classifyOverdueTasks();
+        return result;
+    } catch (error) {
+        throw error;
+    }
+};
+
 const initialize = async () => {
     if (schedulerState.isInitialized) {
         return schedulerState;
@@ -220,6 +235,7 @@ module.exports = {
     processDeferredTasks,
     processDueTasks,
     processDueProjects,
+    processCarryoverClassification,
     _createSchedulerState: createSchedulerState,
     _shouldDisableScheduler: shouldDisableScheduler,
     _getCronExpression: getCronExpression,

@@ -27,6 +27,11 @@ import {
 import ColorPicker from '../Shared/ColorPicker';
 import GoalDropdown from '../Shared/GoalDropdown';
 import { fetchGoals } from '../../utils/goalsService';
+import {
+    fetchStrategies,
+    setProjectStrategies,
+} from '../../utils/goalsHqService';
+import { Strategy } from '../../entities/Strategy';
 
 interface ProjectModalProps {
     isOpen: boolean;
@@ -86,10 +91,49 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
         priority: false,
         dueDate: false,
         color: false,
+        strategies: false,
     });
 
     const { showSuccessToast, showErrorToast } = useToast();
     const { t } = useTranslation();
+    const goalshqEnabled = useStore(
+        (state: any) => state.userSettingsStore?.goalshqEnabled
+    );
+    const [allStrategies, setAllStrategies] = useState<Strategy[]>([]);
+    const [projectStrategyUids, setProjectStrategyUids] = useState<string[]>(
+        []
+    );
+
+    useEffect(() => {
+        if (!goalshqEnabled || !project?.uid) return;
+        fetchStrategies()
+            .then((list) => {
+                setAllStrategies(list);
+                setProjectStrategyUids(
+                    list
+                        .filter((s) =>
+                            (s.projects || []).some(
+                                (p) => p.uid === project.uid
+                            )
+                        )
+                        .map((s) => s.uid)
+                );
+            })
+            .catch(() => setAllStrategies([]));
+    }, [goalshqEnabled, project?.uid]);
+
+    const toggleProjectStrategy = async (uid: string) => {
+        if (!project?.uid) return;
+        const next = projectStrategyUids.includes(uid)
+            ? projectStrategyUids.filter((u) => u !== uid)
+            : [...projectStrategyUids, uid];
+        setProjectStrategyUids(next);
+        try {
+            await setProjectStrategies(project.uid, next);
+        } catch (e) {
+            showErrorToast((e as Error).message);
+        }
+    };
 
     // Auto-focus on the name input when modal opens
     useEffect(() => {
@@ -410,7 +454,11 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
     const toggleSection = useCallback(
         (section: keyof typeof expandedSections) => {
             // Load tags eagerly when the tags section is opened so quick-access chips appear
-            if (section === 'tags' && !tagsStore.hasLoaded && !tagsStore.isLoading) {
+            if (
+                section === 'tags' &&
+                !tagsStore.hasLoaded &&
+                !tagsStore.isLoading
+            ) {
                 tagsStore.loadTags();
             }
             setExpandedSections((prev) => {
@@ -629,19 +677,80 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
                                                         Goal
                                                     </h3>
                                                     <GoalDropdown
-                                                        goalId={formData.goal_id ?? null}
-                                                        isMaintenance={!!formData.is_maintenance}
+                                                        goalId={
+                                                            formData.goal_id ??
+                                                            null
+                                                        }
+                                                        isMaintenance={
+                                                            !!formData.is_maintenance
+                                                        }
                                                         goals={availableGoals}
-                                                        onChange={(id, maintenance) =>
-                                                            setFormData((prev) => ({
-                                                                ...prev,
-                                                                goal_id: id,
-                                                                is_maintenance: maintenance,
-                                                            }))
+                                                        onChange={(
+                                                            id,
+                                                            maintenance
+                                                        ) =>
+                                                            setFormData(
+                                                                (prev) => ({
+                                                                    ...prev,
+                                                                    goal_id: id,
+                                                                    is_maintenance:
+                                                                        maintenance,
+                                                                })
+                                                            )
                                                         }
                                                     />
                                                 </div>
                                             )}
+
+                                            {expandedSections.strategies &&
+                                                goalshqEnabled &&
+                                                project?.uid && (
+                                                    <div className="border-b border-gray-200 dark:border-gray-700 pb-4 mb-4 px-4">
+                                                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                                                            {t(
+                                                                'goalshq.strategies',
+                                                                'Strategies'
+                                                            )}
+                                                        </h3>
+                                                        <div className="max-h-40 space-y-1 overflow-y-auto">
+                                                            {allStrategies.length ===
+                                                            0 ? (
+                                                                <p className="text-xs text-gray-400">
+                                                                    {t(
+                                                                        'goalshq.noStrategies',
+                                                                        'No strategies yet.'
+                                                                    )}
+                                                                </p>
+                                                            ) : (
+                                                                allStrategies.map(
+                                                                    (s) => (
+                                                                        <label
+                                                                            key={
+                                                                                s.uid
+                                                                            }
+                                                                            className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200"
+                                                                        >
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={projectStrategyUids.includes(
+                                                                                    s.uid
+                                                                                )}
+                                                                                onChange={() =>
+                                                                                    toggleProjectStrategy(
+                                                                                        s.uid
+                                                                                    )
+                                                                                }
+                                                                            />
+                                                                            {
+                                                                                s.name
+                                                                            }
+                                                                        </label>
+                                                                    )
+                                                                )
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
 
                                             {expandedSections.priority && (
                                                 <div className="border-b border-gray-200 dark:border-gray-700 pb-4 mb-4 px-4">
@@ -685,7 +794,9 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
                                                             onChange={
                                                                 handleDueDateChange
                                                             }
-                                                            placeholder={t('projects.selectDueDatePlaceholder')}
+                                                            placeholder={t(
+                                                                'projects.selectDueDatePlaceholder'
+                                                            )}
                                                         />
                                                     </div>
                                                 </div>
@@ -700,12 +811,16 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
                                                         )}
                                                     </h3>
                                                     <ColorPicker
-                                                        value={formData.color || ''}
+                                                        value={
+                                                            formData.color || ''
+                                                        }
                                                         onChange={(color) =>
-                                                            setFormData((prev) => ({
-                                                                ...prev,
-                                                                color,
-                                                            }))
+                                                            setFormData(
+                                                                (prev) => ({
+                                                                    ...prev,
+                                                                    color,
+                                                                })
+                                                            )
                                                         }
                                                     />
                                                 </div>
@@ -786,7 +901,9 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
                                         {/* Goal Toggle */}
                                         <button
                                             type="button"
-                                            onClick={() => toggleSection('goal')}
+                                            onClick={() =>
+                                                toggleSection('goal')
+                                            }
                                             className={`relative p-2 rounded-full transition-colors ${
                                                 expandedSections.goal
                                                     ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400'
@@ -795,10 +912,36 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
                                             title={t('projects.goalTitle')}
                                         >
                                             <FlagIcon className="h-5 w-5" />
-                                            {(formData.goal_id != null || formData.is_maintenance) && (
+                                            {(formData.goal_id != null ||
+                                                formData.is_maintenance) && (
                                                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full"></span>
                                             )}
                                         </button>
+
+                                        {/* Strategies Toggle (GoalsHQ, edit only) */}
+                                        {goalshqEnabled && project?.uid && (
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    toggleSection('strategies')
+                                                }
+                                                className={`relative p-2 rounded-full transition-colors ${
+                                                    expandedSections.strategies
+                                                        ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400'
+                                                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                                }`}
+                                                title={t(
+                                                    'goalshq.strategies',
+                                                    'Strategies'
+                                                )}
+                                            >
+                                                <Squares2X2Icon className="h-5 w-5" />
+                                                {projectStrategyUids.length >
+                                                    0 && (
+                                                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full"></span>
+                                                )}
+                                            </button>
+                                        )}
 
                                         {/* Priority Toggle */}
                                         <button
@@ -861,7 +1004,10 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
                                             {formData.color && (
                                                 <span
                                                     className="absolute -top-1 -right-1 w-3 h-3 rounded-full border border-white dark:border-gray-800"
-                                                    style={{ backgroundColor: formData.color }}
+                                                    style={{
+                                                        backgroundColor:
+                                                            formData.color,
+                                                    }}
                                                 />
                                             )}
                                         </button>

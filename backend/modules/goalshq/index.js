@@ -1,9 +1,7 @@
 'use strict';
 
-// Registering the models on tududi's shared Sequelize instance is a require-time
-// side effect so `sequelize.sync()` (tests) and a running server both see the
-// goalshq_* tables.
-require('./models');
+// GoalsHQ models are registered directly in backend/models/index.js alongside
+// core models (see docs/goalshq/adr/0002-first-class-integration.md).
 
 const routes = require('./routes');
 const service = require('./service');

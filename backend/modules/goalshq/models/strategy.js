@@ -4,10 +4,18 @@ const { DataTypes } = require('sequelize');
 const { uid } = require('../../../utils/uid');
 
 /**
- * goalshq_strategies — the Strategy/Outcome tier that sits between a tududi Goal
- * and its Projects. GoalsHQ-owned; no Sequelize association to core models
- * (see docs/goalshq/adr/0001-isolation-architecture.md). `goal_id` / `user_id`
- * are plain integer columns joined manually in the repository.
+ * goalshq_strategies — a grouping bucket that collects the projects pursuing one
+ * broad approach ("Real Estate", "Systems Security"). It is NOT a measured
+ * rollup tier (see docs/goalshq/adr/0003-strategy-as-grouping.md, which
+ * supersedes 0002's measured-tier design).
+ *
+ * - `goal_id` is optional ("No Goal", mirroring goals.area_id).
+ * - Strategy <-> Project is many-to-many via goalshq_project_strategies.
+ * - `cached_percent` / `cached_health` hold a *grouping summary* only: the
+ *   unweighted mean of the linked projects' execution %. It is display-only and
+ *   never contributes to the parent goal's number.
+ *
+ * Associations (Goal, Project) are declared in backend/models/index.js.
  */
 module.exports = (sequelize) => {
     const Strategy = sequelize.define(
@@ -26,7 +34,7 @@ module.exports = (sequelize) => {
             },
             goal_id: {
                 type: DataTypes.INTEGER,
-                allowNull: false,
+                allowNull: true,
             },
             user_id: {
                 type: DataTypes.INTEGER,
@@ -40,53 +48,23 @@ module.exports = (sequelize) => {
                 type: DataTypes.TEXT,
                 allowNull: true,
             },
-            kind: {
-                type: DataTypes.ENUM('primary', 'secondary', 'experiment'),
-                allowNull: false,
-                defaultValue: 'primary',
+            color: {
+                type: DataTypes.STRING(50),
+                allowNull: true,
             },
             status: {
                 type: DataTypes.ENUM('active', 'paused', 'achieved', 'dropped'),
                 allowNull: false,
                 defaultValue: 'active',
             },
-            horizon_label: {
-                type: DataTypes.STRING(120),
-                allowNull: true,
-            },
-            start_date: {
-                type: DataTypes.DATEONLY,
-                allowNull: true,
-            },
-            target_date: {
-                type: DataTypes.DATEONLY,
-                allowNull: true,
-            },
-            importance: {
-                type: DataTypes.INTEGER,
-                allowNull: false,
-                defaultValue: 3,
-            },
-            progress_mode: {
-                type: DataTypes.ENUM(
-                    'rollup_projects',
-                    'rollup_tasks',
-                    'metric',
-                    'milestones',
-                    'manual'
-                ),
-                allowNull: false,
-                defaultValue: 'rollup_projects',
-            },
-            weight_by_priority: {
+            // When false, this strategy's Key Results / Milestones render
+            // read-only (still shown "for context", never rolled into a goal).
+            metrics_editable: {
                 type: DataTypes.BOOLEAN,
                 allowNull: false,
-                defaultValue: false,
+                defaultValue: true,
             },
-            manual_percent: {
-                type: DataTypes.FLOAT,
-                allowNull: true,
-            },
+            // Grouping summary = unweighted mean of linked projects' execution %.
             cached_percent: {
                 type: DataTypes.FLOAT,
                 allowNull: true,

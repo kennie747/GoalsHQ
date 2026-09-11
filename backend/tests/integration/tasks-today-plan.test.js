@@ -1,6 +1,6 @@
 const request = require('supertest');
 const app = require('../../app');
-const { Task } = require('../../models');
+const { Task, Goal } = require('../../models');
 const { createTestUser } = require('../helpers/testUtils');
 
 describe('Tasks Today Plan - Status-Based Filtering', () => {
@@ -323,6 +323,56 @@ describe('Tasks Today Plan - Status-Based Filtering', () => {
             expect(taskNames[0]).toBe('High Priority Due Soon');
             expect(taskNames[1]).toBe('High Priority Due Later');
             expect(taskNames[2]).toBe('Low Priority');
+        });
+    });
+
+    describe('goal_uid serialization for goal-linked tasks with no project', () => {
+        it('populates goal_uid on a task linked directly to a Goal (no project)', async () => {
+            const goal = await Goal.create({
+                user_id: user.id,
+                title: 'Direct Bucket Goal',
+                horizon: 'season',
+                status: 'active',
+            });
+            await Task.create({
+                name: 'Direct Goal Task',
+                user_id: user.id,
+                status: Task.STATUS.PLANNED,
+                goal_id: goal.id,
+            });
+
+            const response = await agent
+                .get('/api/tasks?type=today&include_lists=true')
+                .expect(200);
+
+            const task = response.body.tasks_today_plan.find(
+                (t) => t.name === 'Direct Goal Task'
+            );
+            expect(task).toBeDefined();
+            expect(task.goal_uid).toBe(goal.uid);
+        });
+
+        it('also populates goal_uid on the plain (non-today-scoped) task list', async () => {
+            const goal = await Goal.create({
+                user_id: user.id,
+                title: 'Another Direct Goal',
+                horizon: 'season',
+                status: 'active',
+            });
+            await Task.create({
+                name: 'Plain List Goal Task',
+                user_id: user.id,
+                status: Task.STATUS.NOT_STARTED,
+                goal_id: goal.id,
+            });
+
+            const response = await agent.get('/api/tasks').expect(200);
+
+            const task = response.body.tasks.find(
+                (t) => t.name === 'Plain List Goal Task'
+            );
+            expect(task).toBeDefined();
+            expect(task.goal_uid).toBe(goal.uid);
         });
     });
 });

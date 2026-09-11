@@ -48,6 +48,45 @@ LLM_MODEL=llama3.2
 
 > **Note on reasoning models:** reasoning models (e.g. DeepSeek-R1, o1-mini) consume hidden tokens before producing output. The daily brief allows up to 1500 completion tokens to accommodate this; task and project insights allow 1000 and 600 respectively. If a reasoning model still exhausts its budget before writing the final answer (cached result comes back with empty fields and `usage.completion_tokens` pinned at the cap), raise the relevant limit below rather than switching models.
 
+### Optional: multi-provider fallback chain
+
+Instead of (or alongside) the single `LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL` trio, you can configure up to four named tiers. `callLLM()` in `service.js` tries every entry in order — the same request params, a different `{client, model}` per attempt — and only surfaces an error once *every* tier has failed. This means a rate limit, an expired key, or an outage on your primary provider degrades to the next one instead of breaking the feature outright.
+
+```bash
+# Tier 1: OpenRouter — LLM_OPENROUTER_MODELS is comma-separated; each model
+# is tried in turn with the same key before moving to tier 2. Useful for
+# rolling from a capable model to a cheaper/free sibling on the same
+# provider when you hit a free-tier or rate limit.
+LLM_OPENROUTER_API_KEY=sk-or-v1-...
+LLM_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1   # default shown
+LLM_OPENROUTER_MODELS=openai/gpt-4o,openai/gpt-4o-mini,openai/gpt-4.1-mini
+
+# Tier 2: Google Gemini (OpenAI-compatible endpoint)
+LLM_GEMINI_API_KEY=AIza...
+LLM_GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/  # default shown
+LLM_GEMINI_MODEL=gemini-3.6-flash
+
+# Tier 3: Groq — LLM_GROQ_EXPIRES_AT (YYYY-MM-DD) is optional; once that
+# date has passed, this tier is automatically excluded from the chain (with
+# a server-log warning) rather than attempted and failing.
+LLM_GROQ_API_KEY=gsk_...
+LLM_GROQ_BASE_URL=https://api.groq.com/openai/v1   # default shown
+LLM_GROQ_MODEL=openai/gpt-oss-120b
+LLM_GROQ_EXPIRES_AT=2026-09-12
+
+# Tier 4: local Ollama — no key needed (the SDK still requires a non-empty
+# string; LLM_OLLAMA_API_KEY defaults to "ollama-local" if unset). This tier
+# only exists in the chain when LLM_OLLAMA_BASE_URL is set — it's the
+# natural last resort since it needs no external account, no billing, and
+# no key that can expire, but the Ollama server itself must be running.
+LLM_OLLAMA_BASE_URL=http://127.0.0.1:11434/v1
+LLM_OLLAMA_MODEL=qwen2.5:3b-instruct
+```
+
+Each tier is included in the chain only when its own API-key env var (or, for Ollama, its base URL) is set — an unconfigured tier is simply absent, not attempted-and-skipped. If the legacy `LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL` trio is also set, it's tried first as an implicit "primary" tier, so existing single-provider setups keep working unchanged; for a fresh multi-tier setup, leave those legacy vars unset so the named tiers' own order governs.
+
+`GET /api/ai-assistant/config` reports the whole assembled chain under a `providers` array (label, base_url, model, expires_at — never an api key), in addition to the existing `api_key_set`/`base_url`/`model` fields (which reflect the first tier, for backward compatibility with existing UI).
+
 ### Optional: per-feature token limits
 
 Each feature's `max_tokens` cap can be overridden independently. Unset falls back to the defaults noted above:
@@ -204,14 +243,16 @@ All endpoints require an authenticated session. Unauthenticated requests return 
 
 | Setting | Primary variable | Fallback variable | Default |
 |---------|-----------------|-------------------|---------|
-| API key | `LLM_API_KEY` | `OPENAI_API_KEY` | (required) |
-| Base URL | `LLM_BASE_URL` | `OPENAI_BASE_URL` | OpenAI (`https://api.openai.com/v1`) |
-| Model | `LLM_MODEL` | `TUDUDI_AI_MODEL` | `gpt-4o-mini` |
+| API key (single-provider / "primary" tier) | `LLM_API_KEY` | `OPENAI_API_KEY` | (required unless a named tier below is set) |
+| Base URL (single-provider / "primary" tier) | `LLM_BASE_URL` | `OPENAI_BASE_URL` | OpenAI (`https://api.openai.com/v1`) |
+| Model (single-provider / "primary" tier) | `LLM_MODEL` | `TUDUDI_AI_MODEL` | `gpt-4o-mini` |
 | Daily Brief max tokens | `LLM_MAX_TOKENS_DAILY_BRIEF` | — | `1500` |
 | Task Insights max tokens | `LLM_MAX_TOKENS_TASK_INSIGHTS` | — | `1000` |
 | Project Insights max tokens | `LLM_MAX_TOKENS_PROJECT_INSIGHTS` | — | `600` |
 
-The client is initialized in `service.js:getOpenAIClient()`. Any provider that speaks the OpenAI chat completions protocol works: set `LLM_BASE_URL` to the provider's endpoint and `LLM_MODEL` to the model name that provider expects.
+See [Optional: multi-provider fallback chain](#optional-multi-provider-fallback-chain) above for the `LLM_OPENROUTER_*`/`LLM_GEMINI_*`/`LLM_GROQ_*`/`LLM_OLLAMA_*` tiers, which sit ahead of (or replace) this single-provider setup.
+
+The client for each tier is built in `service.js:buildClient()` (cached per `{baseUrl, apiKey}` pair) and tried via `callLLM()`, which walks `getProviderChain()` in order. Any provider that speaks the OpenAI chat completions protocol works: set the tier's base URL to the provider's endpoint and its model to the name that provider expects.
 
 All three LLM calls request `response_format: { type: 'json_object' }` for structured output. If your backend does not support this parameter, the response parser will still attempt to extract JSON from raw text (including code-fenced output).
 

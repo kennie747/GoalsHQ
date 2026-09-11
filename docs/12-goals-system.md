@@ -365,6 +365,30 @@ See [MCP Integration](14-mcp-integration.md#goals-tools-5) for full parameter de
 
 ---
 
+## GoalsHQ layer (Strategy, execution/outcome, metrics)
+
+When `GOALSHQ_ENABLED` (default on), the goal detail page gains a **Progress**
+block:
+
+- **Strategy** is a *grouping bucket* — a named set of the projects that belong
+  together under one broad approach ("Real Estate", "Systems Security"). It has
+  a name, description, status, colour, an **optional** Goal (detachable via
+  "No goal"), and any number of Projects (many-to-many, edited from either
+  side). It shows one number — the plain average of its linked projects'
+  progress ("avg of N projects") — which is **display-only and never changes
+  the goal's number**.
+- **Execution %** (task completion) is always shown. **Outcome %** (Key Results
+  + milestone ratio) is opt-in per goal/project via an "enable outcome metrics"
+  toggle, and is shown *beside* execution, never blended.
+- Key Results / Milestones attach to a Goal, Project, or Strategy (strategy
+  ones are display-only context). A KR can auto-update from its scope's
+  done-task count.
+
+Full detail: [`docs/goalshq/README.md`](goalshq/README.md) and
+[`docs/goalshq/adr/0003-strategy-as-grouping.md`](goalshq/adr/0003-strategy-as-grouping.md).
+
+---
+
 ## Related Documentation
 
 - [Areas](07-areas.md) - Goals can optionally belong to areas; the Area detail page shows goals for that area

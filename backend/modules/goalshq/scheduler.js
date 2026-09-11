@@ -1,10 +1,11 @@
 'use strict';
 
 const cron = require('node-cron');
-const t = require('./core/tududi');
 const rollup = require('./operations/rollup');
+const logService = require('../../services/logService');
+const { getConfig } = require('../../config/config');
 
-const { logService, config } = t;
+const config = getConfig();
 
 const RECOMPUTE_CRON = process.env.GOALSHQ_RECOMPUTE_CRON || '*/15 * * * *';
 const GC_CRON = process.env.GOALSHQ_GC_CRON || '30 3 * * *'; // nightly 03:30
@@ -53,8 +54,8 @@ async function runGc() {
 }
 
 /**
- * Idempotent. Called lazily from the router on the first GoalsHQ request so
- * app.js needs no startServer() edit. Safe to call repeatedly.
+ * Idempotent. Called from backend/app.js's startServer(), alongside
+ * taskScheduler/caldavSyncScheduler. Safe to call repeatedly.
  */
 function initialize() {
     if (state.initialized) return state;

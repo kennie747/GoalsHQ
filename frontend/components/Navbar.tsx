@@ -18,7 +18,8 @@ import { useTranslation } from 'react-i18next';
 import PomodoroTimer from './Shared/PomodoroTimer';
 import UniversalSearch from './UniversalSearch/UniversalSearch';
 import NotificationsDropdown from './Notifications/NotificationsDropdown';
-import { getApiPath, getAssetPath } from '../config/paths';
+import Logo from './Shared/Logo';
+import { getApiPath } from '../config/paths';
 import { getFeatureFlags, FeatureFlags } from '../utils/featureFlags';
 import { setUserTimezone } from '../utils/dateUtils';
 import { fetchProfile as fetchProfileFromService, invalidateProfileCache } from '../utils/profileService';
@@ -52,6 +53,7 @@ const Navbar: React.FC<NavbarProps> = ({
         backups: false,
         caldav: false,
         mcp: false,
+        dataExchange: false,
     });
     const dropdownRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
@@ -187,15 +189,7 @@ const Navbar: React.FC<NavbarProps> = ({
                         to="/"
                         className={`flex items-center no-underline ml-2 ${isSidebarOpen ? 'sm:ml-0' : 'sm:hidden'}`}
                     >
-                        <img
-                            src={getAssetPath(
-                                isDarkMode
-                                    ? 'wide-logo-light.png'
-                                    : 'wide-logo-dark.png'
-                            )}
-                            alt="tududi"
-                            className="h-9 w-auto"
-                        />
+                        <Logo size="sm" />
                     </Link>
                 </div>
 
@@ -281,6 +275,19 @@ const Navbar: React.FC<NavbarProps> = ({
                                         {t(
                                             'navigation.backupRestore',
                                             'Backup & Restore'
+                                        )}
+                                    </Link>
+                                )}
+                                {featureFlags.dataExchange && (
+                                    <Link
+                                        to="/data-exchange"
+                                        className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                        onClick={() => setIsDropdownOpen(false)}
+                                    >
+                                        <CircleStackIcon className="h-4 w-4 mr-2 shrink-0" />
+                                        {t(
+                                            'navigation.dataExchange',
+                                            'Import & Export'
                                         )}
                                     </Link>
                                 )}

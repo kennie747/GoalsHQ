@@ -4,6 +4,7 @@ const router = express.Router();
 // Import sub-routers for task-related routes
 const attachmentsRouter = require('./attachments');
 const eventsRouter = require('./events');
+const carryoverRouter = require('./carryover/routes');
 
 const {
     Task,
@@ -852,6 +853,20 @@ router.patch('/task/:uid', requireTaskWriteAccess, async (req, res) => {
                 taskAttributes.status,
                 req.currentUser.id
             );
+
+            // GoalsHQ: a completion-status change can satisfy an auto_source
+            // Key Result or a milestone auto-achieve trigger — recompute now
+            // rather than waiting for the periodic sweep. Best-effort.
+            if (oldStatus !== taskAttributes.status) {
+                try {
+                    await require('../goalshq/service').recomputeForTask(task);
+                } catch (goalshqErr) {
+                    logError(
+                        'GoalsHQ recompute after task status change failed:',
+                        goalshqErr
+                    );
+                }
+            }
         }
 
         if (recurringCompletionPayload) {
@@ -1004,6 +1019,17 @@ router.delete('/task/:uid', requireTaskWriteAccess, async (req, res) => {
             await sequelize.query('PRAGMA foreign_keys = ON');
         }
 
+        // GoalsHQ: drop milestone task-links and forget any milestone that
+        // spawned this task via "Expand into task", then recompute. Best-effort.
+        try {
+            await require('../goalshq/service').detachTask(taskId);
+        } catch (goalshqErr) {
+            logError(
+                'GoalsHQ detachTask after task delete failed:',
+                goalshqErr
+            );
+        }
+
         res.json({ message: 'Task successfully deleted' });
     } catch (error) {
         res.status(400).json({
@@ -1081,5 +1107,6 @@ router.get('/task/:uid/next-iterations', async (req, res) => {
 // Mount sub-routers for task-related routes
 router.use(attachmentsRouter);
 router.use(eventsRouter);
+router.use(carryoverRouter);
 
 module.exports = router;

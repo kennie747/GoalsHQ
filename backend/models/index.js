@@ -88,8 +88,11 @@ const ApiToken = require('./api_token')(sequelize);
 const Setting = require('./setting')(sequelize);
 const Notification = require('./notification')(sequelize);
 const RecurringCompletion = require('./recurringCompletion')(sequelize);
-const TaskAttachment = require('./task_attachment')(sequelize);
+const Attachment = require('./attachment')(sequelize);
+// Back-compat alias — task-only code still imports `TaskAttachment`.
+const TaskAttachment = Attachment;
 const Backup = require('./backup')(sequelize);
+const DataExchangeJob = require('./data_exchange_job')(sequelize);
 const OIDCIdentity = require('./oidc_identity')(sequelize);
 const OIDCStateNonce = require('./oidc_state_nonce')(sequelize);
 const AuthAuditLog = require('./auth_audit_log')(sequelize);
@@ -103,6 +106,33 @@ const CalendarToken = require('./calendar_token')(sequelize);
 const Goal = require('./goal')(sequelize);
 const Person = require('./person')(sequelize);
 const UserProjectArea = require('./user_project_area')(sequelize);
+const TaskCarryoverEvent = require('./task_carryover_event')(sequelize);
+const GoalshqStrategy = require('../modules/goalshq/models/strategy')(
+    sequelize
+);
+const GoalshqProjectStrategy =
+    require('../modules/goalshq/models/projectStrategy')(sequelize);
+const GoalshqGoalSettings = require('../modules/goalshq/models/goalSettings')(
+    sequelize
+);
+const GoalshqKeyResult = require('../modules/goalshq/models/keyResult')(
+    sequelize
+);
+const GoalshqMilestone = require('../modules/goalshq/models/milestone')(
+    sequelize
+);
+const GoalshqProgressSnapshot =
+    require('../modules/goalshq/models/progressSnapshot')(sequelize);
+const GoalshqProjectSettings =
+    require('../modules/goalshq/models/projectSettings')(sequelize);
+const GoalshqRecord = require('../modules/goalshq/models/record')(sequelize);
+const GoalshqKeyResultEntry =
+    require('../modules/goalshq/models/keyResultEntry')(sequelize);
+const GoalshqMilestoneTask = require('../modules/goalshq/models/milestoneTask')(
+    sequelize
+);
+const GoalshqMilestoneProject =
+    require('../modules/goalshq/models/milestoneProject')(sequelize);
 
 User.hasMany(Area, { foreignKey: 'user_id' });
 Area.belongsTo(User, { foreignKey: 'user_id' });
@@ -143,6 +173,18 @@ User.hasMany(TaskEvent, { foreignKey: 'user_id', as: 'TaskEvents' });
 TaskEvent.belongsTo(User, { foreignKey: 'user_id', as: 'User' });
 Task.hasMany(TaskEvent, { foreignKey: 'task_id', as: 'TaskEvents' });
 TaskEvent.belongsTo(Task, { foreignKey: 'task_id', as: 'Task' });
+
+// Carryover/rescheduling (Phase D)
+User.hasMany(TaskCarryoverEvent, {
+    foreignKey: 'user_id',
+    as: 'CarryoverEvents',
+});
+TaskCarryoverEvent.belongsTo(User, { foreignKey: 'user_id', as: 'User' });
+Task.hasMany(TaskCarryoverEvent, {
+    foreignKey: 'task_id',
+    as: 'CarryoverEvents',
+});
+TaskCarryoverEvent.belongsTo(Task, { foreignKey: 'task_id', as: 'Task' });
 
 Task.belongsTo(Task, {
     as: 'ParentTask',
@@ -233,6 +275,13 @@ TaskAttachment.belongsTo(Task, { foreignKey: 'task_id' });
 // Backup associations
 User.hasMany(Backup, { foreignKey: 'user_id', as: 'Backups' });
 Backup.belongsTo(User, { foreignKey: 'user_id', as: 'User' });
+
+// Data Exchange job history
+User.hasMany(DataExchangeJob, {
+    foreignKey: 'user_id',
+    as: 'DataExchangeJobs',
+});
+DataExchangeJob.belongsTo(User, { foreignKey: 'user_id', as: 'User' });
 
 // OIDC associations
 User.hasMany(OIDCIdentity, { foreignKey: 'user_id', as: 'OIDCIdentities' });
@@ -326,6 +375,137 @@ Person.hasMany(Task, {
 });
 User.hasOne(Person, { foreignKey: 'linked_user_id', as: 'SelfPerson' });
 Person.belongsTo(User, { foreignKey: 'linked_user_id', as: 'LinkedUser' });
+
+// GoalsHQ associations — Strategy is a first-class peer of Goal/Project/Task
+// (see docs/goalshq/adr/0002-first-class-integration.md; supersedes the
+// isolation architecture in adr/0001).
+Goal.hasMany(GoalshqStrategy, { foreignKey: 'goal_id', as: 'Strategies' });
+GoalshqStrategy.belongsTo(Goal, { foreignKey: 'goal_id', as: 'Goal' });
+
+Goal.hasOne(GoalshqGoalSettings, {
+    foreignKey: 'goal_id',
+    as: 'GoalshqSettings',
+});
+GoalshqGoalSettings.belongsTo(Goal, { foreignKey: 'goal_id', as: 'Goal' });
+
+// Strategy <-> Project is many-to-many: a project may serve several
+// strategies at once (see goalshq_project_strategies migration
+// 20260905000001, which replaced the old one-strategy-per-project
+// constraint).
+GoalshqStrategy.belongsToMany(Project, {
+    through: GoalshqProjectStrategy,
+    foreignKey: 'strategy_id',
+    otherKey: 'project_id',
+    as: 'Projects',
+});
+Project.belongsToMany(GoalshqStrategy, {
+    through: GoalshqProjectStrategy,
+    foreignKey: 'project_id',
+    otherKey: 'strategy_id',
+    as: 'Strategies',
+});
+GoalshqProjectStrategy.belongsTo(GoalshqStrategy, {
+    foreignKey: 'strategy_id',
+    as: 'Strategy',
+});
+GoalshqProjectStrategy.belongsTo(Project, {
+    foreignKey: 'project_id',
+    as: 'Project',
+});
+
+// Project gets the same measurable tier as Goal/Strategy (Phase A Follow-up).
+Project.hasOne(GoalshqProjectSettings, {
+    foreignKey: 'project_id',
+    as: 'GoalshqSettings',
+});
+GoalshqProjectSettings.belongsTo(Project, {
+    foreignKey: 'project_id',
+    as: 'Project',
+});
+
+// KeyResult / Milestone / ProgressSnapshot are polymorphic (parent_type +
+// parent_id, no single-table FK possible) — scoped hasMany associations give
+// ORM convenience (goal.getKeyResults(), include: 'KeyResults') without a real
+// DB-level FK constraint, since parent_id can point at Goal, GoalshqStrategy,
+// or Project depending on parent_type. `constraints: false` is required here
+// so sequelize.sync() (used by the test suite) doesn't try to declare a
+// single FK on parent_id pointing at multiple different tables.
+for (const [Parent, parentType] of [
+    [Goal, 'goal'],
+    [GoalshqStrategy, 'strategy'],
+    [Project, 'project'],
+]) {
+    Parent.hasMany(GoalshqKeyResult, {
+        foreignKey: 'parent_id',
+        scope: { parent_type: parentType },
+        as: 'KeyResults',
+        constraints: false,
+    });
+    Parent.hasMany(GoalshqMilestone, {
+        foreignKey: 'parent_id',
+        scope: { parent_type: parentType },
+        as: 'Milestones',
+        constraints: false,
+    });
+    Parent.hasMany(GoalshqProgressSnapshot, {
+        foreignKey: 'parent_id',
+        scope: { parent_type: parentType },
+        as: 'ProgressSnapshots',
+        constraints: false,
+    });
+    Parent.hasMany(GoalshqRecord, {
+        foreignKey: 'parent_id',
+        scope: { parent_type: parentType },
+        as: 'Records',
+        constraints: false,
+    });
+}
+
+// KR check-in history + KR tree.
+GoalshqKeyResult.hasMany(GoalshqKeyResultEntry, {
+    foreignKey: 'key_result_id',
+    as: 'Entries',
+});
+GoalshqKeyResultEntry.belongsTo(GoalshqKeyResult, {
+    foreignKey: 'key_result_id',
+});
+GoalshqKeyResult.hasMany(GoalshqKeyResult, {
+    foreignKey: 'parent_kr_id',
+    as: 'ChildKeyResults',
+});
+GoalshqKeyResult.belongsTo(GoalshqKeyResult, {
+    foreignKey: 'parent_kr_id',
+    as: 'ParentKeyResult',
+});
+
+// Milestone ↔ task auto-achieve links.
+GoalshqMilestone.hasMany(GoalshqMilestoneTask, {
+    foreignKey: 'milestone_id',
+    as: 'TaskLinks',
+});
+GoalshqMilestoneTask.belongsTo(GoalshqMilestone, {
+    foreignKey: 'milestone_id',
+});
+
+// Milestone ↔ whole-project auto-achieve links.
+GoalshqMilestone.hasMany(GoalshqMilestoneProject, {
+    foreignKey: 'milestone_id',
+    as: 'ProjectLinks',
+});
+GoalshqMilestoneProject.belongsTo(GoalshqMilestone, {
+    foreignKey: 'milestone_id',
+});
+
+// Task gets KeyResult only (the "batch/quota task" primitive) — not
+// Milestone (redundant with a task's own due_date/status) or ProgressSnapshot
+// (tasks are too short-lived/numerous to be worth daily-snapshotting). A
+// task-parented KeyResult is informational only and never feeds a rollup.
+Task.hasMany(GoalshqKeyResult, {
+    foreignKey: 'parent_id',
+    scope: { parent_type: 'task' },
+    as: 'KeyResults',
+    constraints: false,
+});
 
 // Auto-create a self-person for every new user
 User.addHook('afterCreate', async (user, options) => {
@@ -460,8 +640,14 @@ module.exports = {
     Setting,
     Notification,
     RecurringCompletion,
+    Attachment,
     TaskAttachment,
+    GoalshqRecord,
+    GoalshqKeyResultEntry,
+    GoalshqMilestoneTask,
+    GoalshqMilestoneProject,
     Backup,
+    DataExchangeJob,
     OIDCIdentity,
     OIDCStateNonce,
     AuthAuditLog,
@@ -472,4 +658,12 @@ module.exports = {
     CalendarToken,
     Person,
     UserProjectArea,
+    GoalshqStrategy,
+    GoalshqProjectStrategy,
+    GoalshqGoalSettings,
+    GoalshqKeyResult,
+    GoalshqMilestone,
+    GoalshqProgressSnapshot,
+    GoalshqProjectSettings,
+    TaskCarryoverEvent,
 };

@@ -19,12 +19,14 @@ test.describe('GoalsHQ', () => {
         baseURL,
     }) => {
         await loginViaUI(page, baseURL);
-        const appUrl = baseURL ?? process.env.APP_URL ?? 'http://localhost:8080';
+        const appUrl =
+            baseURL ?? process.env.APP_URL ?? 'http://localhost:8080';
+        const goalTitle = `E2E Goal ${Date.now()}`;
 
         // Seed a goal through tududi's own API (session cookie carries over).
         const created = await page.request.post(`${appUrl}/api/goals`, {
             data: {
-                title: `E2E Goal ${Date.now()}`,
+                title: goalTitle,
                 horizon: 'year',
                 status: 'active',
             },
@@ -32,36 +34,53 @@ test.describe('GoalsHQ', () => {
         expect(created.ok()).toBeTruthy();
         const goalUid = (await created.json()).goal.uid;
 
-        // Dashboard shows the goal.
-        await page.goto(`${appUrl}/goalshq`);
-        await expect(
-            page.getByRole('heading', { name: /GoalsHQ/i })
-        ).toBeVisible();
-        const card = page.locator(`a[href^="/goalshq/goal/${goalUid}"]`);
+        // The goals list shows it, and its card links to /goal/<uid>-<slug>
+        // (frontend/utils/slugUtils.ts createGoalUrl — there is no standalone
+        // "/goalshq" dashboard; GoalsHQ surfaces on the regular Goal detail
+        // page's "Metrics" tab, per the tabbed-Goal-detail-page redesign).
+        await page.goto(`${appUrl}/goals`);
+        const card = page.locator(`a[href^="/goal/${goalUid}"]`);
         await expect(card).toBeVisible();
 
-        // Open it and add a strategy.
+        // Open it and switch to the Metrics tab.
         await card.click();
-        await page.getByPlaceholder(/New strategy name/i).fill('E2E strategy');
-        await page
-            .getByRole('button', { name: /^Add$/ })
-            .first()
+        await expect(
+            page.getByRole('heading', { name: goalTitle })
+        ).toBeVisible();
+        await page.getByRole('button', { name: 'Metrics' }).click();
+
+        // Progress > Strategies sub-tab: add a strategy for this goal. Scope
+        // to the panel's own section — the sidebar has its own "+ New
+        // strategy" quick-add button with the same accessible name.
+        await page.getByRole('button', { name: 'Strategies' }).click();
+        const strategiesSection = page
+            .locator('section')
+            .filter({ has: page.getByRole('heading', { name: 'Strategies' }) });
+        await strategiesSection
+            .getByRole('button', { name: /New strategy/i })
             .click();
+        await page.getByPlaceholder(/Strategy name/i).fill('E2E strategy');
+        await page.getByRole('button', { name: 'Create', exact: true }).click();
         await expect(page.getByText('E2E strategy')).toBeVisible();
 
-        // A progress bar renders (rollup ran).
+        // Back on Progress > Execution, a progress bar renders (rollup ran).
+        await page.getByRole('button', { name: 'Execution' }).click();
         await expect(page.getByRole('progressbar').first()).toBeVisible();
     });
 
-    test('feature gate: disabled → redirects away and hides the nav', async ({
+    test('feature gate: enabled path is reachable', async ({
         page,
         baseURL,
     }) => {
-        // This run has GOALSHQ_ENABLED=true, so just assert the enabled path is
-        // reachable; the disabled path is covered by the backend integration test.
+        // This run has GOALSHQ_ENABLED=true, so just assert the enabled path
+        // (the Strategy overview page) is reachable; the disabled path is
+        // covered by the backend integration test.
         await loginViaUI(page, baseURL);
-        const appUrl = baseURL ?? process.env.APP_URL ?? 'http://localhost:8080';
-        await page.goto(`${appUrl}/goalshq`);
-        await expect(page).toHaveURL(/\/goalshq/);
+        const appUrl =
+            baseURL ?? process.env.APP_URL ?? 'http://localhost:8080';
+        await page.goto(`${appUrl}/strategy`);
+        await expect(
+            page.getByRole('heading', { name: 'Strategy' })
+        ).toBeVisible();
     });
 });

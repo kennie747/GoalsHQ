@@ -1,7 +1,8 @@
 'use strict';
 
 const service = require('./service');
-const { getAuthenticatedUserId, errors } = require('./core/tududi');
+const { getAuthenticatedUserId } = require('../../utils/request-utils');
+const errors = require('../../shared/errors');
 
 const { UnauthorizedError, NotFoundError } = errors;
 
@@ -18,10 +19,6 @@ function ensureEnabled() {
 }
 
 const controller = {
-    config(req, res) {
-        res.json({ enabled: service.isEnabled() });
-    },
-
     async listGoals(req, res, next) {
         try {
             ensureEnabled();
@@ -59,6 +56,35 @@ const controller = {
         }
     },
 
+    async getProject(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const project = await service.getProjectDetail(
+                userId,
+                req.params.uid
+            );
+            res.json({ project });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async updateProjectSettings(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const settings = await service.updateProjectSettings(
+                userId,
+                req.params.uid,
+                req.body || {}
+            );
+            res.json({ settings });
+        } catch (err) {
+            next(err);
+        }
+    },
+
     async listStrategies(req, res, next) {
         try {
             ensureEnabled();
@@ -73,16 +99,71 @@ const controller = {
         }
     },
 
+    async listAllStrategies(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const strategies = await service.listAllStrategies(userId);
+            res.json({ strategies });
+        } catch (err) {
+            next(err);
+        }
+    },
+
     async createStrategy(req, res, next) {
         try {
             ensureEnabled();
             const userId = requireUserId(req);
             const strategy = await service.createStrategy(
                 userId,
-                req.params.uid,
                 req.body || {}
             );
             res.status(201).json({ strategy });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    // POST /goalshq/goals/:uid/strategies — alias that pins the goal.
+    async createStrategyForGoal(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const strategy = await service.createStrategy(userId, {
+                ...(req.body || {}),
+                goal_uid: req.params.uid,
+            });
+            res.status(201).json({ strategy });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async setStrategyProjects(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const strategy = await service.setStrategyProjects(
+                userId,
+                req.params.uid,
+                req.body || {}
+            );
+            res.json({ strategy });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async setProjectStrategies(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const result = await service.setProjectStrategies(
+                userId,
+                req.params.uid,
+                req.body || {}
+            );
+            res.json(result);
         } catch (err) {
             next(err);
         }
@@ -270,6 +351,17 @@ const controller = {
         }
     },
 
+    async expandMilestone(req, res, next) {
+        try {
+            ensureEnabled();
+            const userId = requireUserId(req);
+            const task = await service.expandMilestone(userId, req.params.uid);
+            res.status(201).json({ task });
+        } catch (err) {
+            next(err);
+        }
+    },
+
     async recomputeGoal(req, res, next) {
         try {
             ensureEnabled();
@@ -290,6 +382,158 @@ const controller = {
                 req.params.uid
             );
             res.json({ strategy });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    /* --------------------------------------------------------- Part 2 */
+
+    async listRecords(req, res, next) {
+        try {
+            ensureEnabled();
+            const records = await service.listRecords(
+                requireUserId(req),
+                req.params.parentType,
+                req.params.uid
+            );
+            res.json({ records });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async createRecord(req, res, next) {
+        try {
+            ensureEnabled();
+            const record = await service.createRecord(
+                requireUserId(req),
+                req.params.parentType,
+                req.params.uid,
+                req.body || {}
+            );
+            res.status(201).json({ record });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async updateRecord(req, res, next) {
+        try {
+            ensureEnabled();
+            const record = await service.updateRecord(
+                requireUserId(req),
+                req.params.uid,
+                req.body || {}
+            );
+            res.json({ record });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async deleteRecord(req, res, next) {
+        try {
+            ensureEnabled();
+            await service.deleteRecord(requireUserId(req), req.params.uid);
+            res.status(204).send();
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async getKeyResult(req, res, next) {
+        try {
+            ensureEnabled();
+            const key_result = await service.getKeyResultDetail(
+                requireUserId(req),
+                req.params.uid
+            );
+            res.json({ key_result });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async listKrEntries(req, res, next) {
+        try {
+            ensureEnabled();
+            const entries = await service.listKrEntries(
+                requireUserId(req),
+                req.params.uid
+            );
+            res.json({ entries });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async createKrEntry(req, res, next) {
+        try {
+            ensureEnabled();
+            const entry = await service.createKrEntry(
+                requireUserId(req),
+                req.params.uid,
+                req.body || {}
+            );
+            res.status(201).json({ entry });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async propagateKeyResult(req, res, next) {
+        try {
+            ensureEnabled();
+            const key_result = await service.propagateKeyResult(
+                requireUserId(req),
+                req.params.uid,
+                req.body || {}
+            );
+            res.json({ key_result });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async setMilestoneTasks(req, res, next) {
+        try {
+            ensureEnabled();
+            const milestones = await service.setMilestoneTasks(
+                requireUserId(req),
+                req.params.uid,
+                (req.body && req.body.task_uids) || []
+            );
+            res.json({ milestones });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async setMilestoneProjects(req, res, next) {
+        try {
+            ensureEnabled();
+            const milestones = await service.setMilestoneProjects(
+                requireUserId(req),
+                req.params.uid,
+                (req.body && req.body.project_uids) || []
+            );
+            res.json({ milestones });
+        } catch (err) {
+            next(err);
+        }
+    },
+
+    async getReport(req, res, next) {
+        try {
+            ensureEnabled();
+            const report = await service.getReport(
+                requireUserId(req),
+                req.params.parentType,
+                req.params.uid,
+                req.query || {}
+            );
+            res.json({ report });
         } catch (err) {
             next(err);
         }

@@ -142,3 +142,19 @@ export function createGoalUrl(goal: { uid?: string; title: string }): string {
     const uidSlug = createUidSlug(goal.uid, goal.title);
     return `/goal/${uidSlug}`;
 }
+
+/**
+ * Creates a strategy URL using uid-slug format
+ * @param strategy - Strategy object with uid and name
+ * @returns The strategy URL path (e.g., "/strategy/abc123-direct-outreach")
+ */
+export function createStrategyUrl(strategy: {
+    uid?: string;
+    name: string;
+}): string {
+    if (!strategy.uid) {
+        throw new Error('Strategy uid is required');
+    }
+    const uidSlug = createUidSlug(strategy.uid, strategy.name);
+    return `/strategy/${uidSlug}`;
+}

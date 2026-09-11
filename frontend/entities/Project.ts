@@ -52,3 +52,14 @@ export interface Project {
     completion_percentage?: number;
     is_stalled?: boolean;
 }
+
+/**
+ * A trimmed Project reference used by GoalsHQ views (strategy/goal detail
+ * pages), plus the GoalsHQ-computed rollup percent for that project. `priority`
+ * is typed loosely because the GoalsHQ API relays the raw DB column rather
+ * than translating it to the string `PriorityType` the rest of the app uses.
+ */
+export type ProjectRef = Pick<Project, 'uid' | 'name' | 'status' | 'color'> & {
+    priority: number | string | null;
+    percent: number | null;
+};

@@ -4,8 +4,14 @@ const { DataTypes } = require('sequelize');
 const { uid } = require('../../../utils/uid');
 
 /**
- * goalshq_milestones — polymorphic checkpoints attached to a goal or a strategy.
- * Drives `progress_mode: 'milestones'` (achieved / total).
+ * goalshq_milestones — polymorphic checkpoints attached to a goal, strategy,
+ * or project (parent_type). Drives `progress_mode: 'milestones'` (achieved /
+ * total). Deliberately NOT extended to Task — a task already has a due date
+ * and a status, so a task-level Milestone would be a redundant second way to
+ * say the same thing (see docs/goalshq/adr/0002-first-class-integration.md,
+ * Phase A Follow-up AF3). Scoped hasMany associations from
+ * Goal/GoalshqStrategy/Project are declared in backend/models/index.js (no
+ * DB-level FK on parent_id — see gcOrphans()).
  */
 module.exports = (sequelize) => {
     const Milestone = sequelize.define(
@@ -23,7 +29,7 @@ module.exports = (sequelize) => {
                 defaultValue: uid,
             },
             parent_type: {
-                type: DataTypes.ENUM('goal', 'strategy'),
+                type: DataTypes.ENUM('goal', 'strategy', 'project'),
                 allowNull: false,
             },
             parent_id: {
@@ -53,6 +59,34 @@ module.exports = (sequelize) => {
             },
             achieved_at: {
                 type: DataTypes.DATE,
+                allowNull: true,
+            },
+            // Auto-achieve: from linked task completion ('all' | 'any') and/or
+            // a Key Result crossing `auto_kr_threshold`. Manual status always
+            // wins; `auto_achieved` marks a flip that happened automatically.
+            completion_mode: {
+                type: DataTypes.STRING(10),
+                allowNull: false,
+                defaultValue: 'all',
+            },
+            auto_kr_id: {
+                type: DataTypes.INTEGER,
+                allowNull: true,
+            },
+            auto_kr_threshold: {
+                type: DataTypes.FLOAT,
+                allowNull: true,
+            },
+            auto_achieved: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false,
+            },
+            // The single task created by "Expand into task". While this task
+            // still exists the expand action is a no-op — see gcOrphans() and
+            // service.expandMilestone().
+            expanded_task_id: {
+                type: DataTypes.INTEGER,
                 allowNull: true,
             },
             sort_order: {

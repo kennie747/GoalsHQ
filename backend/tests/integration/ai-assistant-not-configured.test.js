@@ -2,15 +2,42 @@ const request = require('supertest');
 const app = require('../../app');
 const { createTestUser } = require('../helpers/testUtils');
 
+// Every env var that can populate a getProviderChain() tier (see
+// modules/ai-assistant/service.js) — a real .env may have any of these set
+// for local development, and this suite must simulate "nothing configured"
+// regardless, or it silently makes real calls to whichever hosted provider
+// is configured.
+const PROVIDER_ENV_KEYS = [
+    'LLM_API_KEY',
+    'LLM_BASE_URL',
+    'LLM_MODEL',
+    'OPENAI_API_KEY',
+    'OPENAI_BASE_URL',
+    'TUDUDI_AI_MODEL',
+    'LLM_OPENROUTER_API_KEY',
+    'LLM_OPENROUTER_BASE_URL',
+    'LLM_OPENROUTER_MODELS',
+    'LLM_GEMINI_API_KEY',
+    'LLM_GEMINI_BASE_URL',
+    'LLM_GEMINI_MODEL',
+    'LLM_GROQ_API_KEY',
+    'LLM_GROQ_BASE_URL',
+    'LLM_GROQ_MODEL',
+    'LLM_GROQ_EXPIRES_AT',
+    'LLM_OLLAMA_API_KEY',
+    'LLM_OLLAMA_BASE_URL',
+    'LLM_OLLAMA_MODEL',
+];
+
 describe('AI Assistant - missing LLM configuration', () => {
     let agent;
     const savedEnv = {};
 
     beforeEach(async () => {
-        savedEnv.llmKey = process.env.LLM_API_KEY;
-        savedEnv.openaiKey = process.env.OPENAI_API_KEY;
-        delete process.env.LLM_API_KEY;
-        delete process.env.OPENAI_API_KEY;
+        PROVIDER_ENV_KEYS.forEach((key) => {
+            savedEnv[key] = process.env[key];
+            delete process.env[key];
+        });
 
         await createTestUser({ email: 'ai-config@example.com' });
 
@@ -22,16 +49,13 @@ describe('AI Assistant - missing LLM configuration', () => {
     });
 
     afterEach(() => {
-        if (savedEnv.llmKey === undefined) {
-            delete process.env.LLM_API_KEY;
-        } else {
-            process.env.LLM_API_KEY = savedEnv.llmKey;
-        }
-        if (savedEnv.openaiKey === undefined) {
-            delete process.env.OPENAI_API_KEY;
-        } else {
-            process.env.OPENAI_API_KEY = savedEnv.openaiKey;
-        }
+        PROVIDER_ENV_KEYS.forEach((key) => {
+            if (savedEnv[key] === undefined) {
+                delete process.env[key];
+            } else {
+                process.env[key] = savedEnv[key];
+            }
+        });
     });
 
     it('reports api_key_set false from the config endpoint', async () => {
