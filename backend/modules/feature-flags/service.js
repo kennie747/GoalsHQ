@@ -7,6 +7,7 @@ class FeatureFlagsService {
     getAll() {
         return {
             backups: process.env.FF_ENABLE_BACKUPS === 'true',
+            dataExchange: process.env.FF_ENABLE_DATA_EXCHANGE === 'true',
             caldav:
                 process.env.FF_ENABLE_CALDAV === 'true' ||
                 process.env.CALDAV_ENABLED === 'true',

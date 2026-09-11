@@ -53,6 +53,7 @@ const Navbar: React.FC<NavbarProps> = ({
         backups: false,
         caldav: false,
         mcp: false,
+        dataExchange: false,
     });
     const dropdownRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
@@ -274,6 +275,19 @@ const Navbar: React.FC<NavbarProps> = ({
                                         {t(
                                             'navigation.backupRestore',
                                             'Backup & Restore'
+                                        )}
+                                    </Link>
+                                )}
+                                {featureFlags.dataExchange && (
+                                    <Link
+                                        to="/data-exchange"
+                                        className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                        onClick={() => setIsDropdownOpen(false)}
+                                    >
+                                        <CircleStackIcon className="h-4 w-4 mr-2 shrink-0" />
+                                        {t(
+                                            'navigation.dataExchange',
+                                            'Import & Export'
                                         )}
                                     </Link>
                                 )}

@@ -92,6 +92,7 @@ const Attachment = require('./attachment')(sequelize);
 // Back-compat alias — task-only code still imports `TaskAttachment`.
 const TaskAttachment = Attachment;
 const Backup = require('./backup')(sequelize);
+const DataExchangeJob = require('./data_exchange_job')(sequelize);
 const OIDCIdentity = require('./oidc_identity')(sequelize);
 const OIDCStateNonce = require('./oidc_state_nonce')(sequelize);
 const AuthAuditLog = require('./auth_audit_log')(sequelize);
@@ -274,6 +275,13 @@ TaskAttachment.belongsTo(Task, { foreignKey: 'task_id' });
 // Backup associations
 User.hasMany(Backup, { foreignKey: 'user_id', as: 'Backups' });
 Backup.belongsTo(User, { foreignKey: 'user_id', as: 'User' });
+
+// Data Exchange job history
+User.hasMany(DataExchangeJob, {
+    foreignKey: 'user_id',
+    as: 'DataExchangeJobs',
+});
+DataExchangeJob.belongsTo(User, { foreignKey: 'user_id', as: 'User' });
 
 // OIDC associations
 User.hasMany(OIDCIdentity, { foreignKey: 'user_id', as: 'OIDCIdentities' });
@@ -639,6 +647,7 @@ module.exports = {
     GoalshqMilestoneTask,
     GoalshqMilestoneProject,
     Backup,
+    DataExchangeJob,
     OIDCIdentity,
     OIDCStateNonce,
     AuthAuditLog,

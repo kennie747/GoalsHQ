@@ -166,6 +166,7 @@ const ProfileSettings: React.FC<ProfileSettingsProps> = ({
         backups: false,
         caldav: false,
         mcp: false,
+        dataExchange: false,
     });
     const [isChangingLanguage, setIsChangingLanguage] = useState(false);
     const [isPolling, setIsPolling] = useState(false);

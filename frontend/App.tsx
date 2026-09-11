@@ -29,6 +29,7 @@ import Calendar from './components/Calendar';
 import ProfileSettings from './components/Profile/ProfileSettings';
 import About from './components/About';
 import BackupRestore from './components/Backup/BackupRestore';
+import DataExchange from './components/DataExchange/DataExchange';
 import Layout from './Layout';
 import { User } from './entities/User';
 import TasksToday from './components/Task/TasksToday';
@@ -353,6 +354,10 @@ const App: React.FC = () => {
                                 element={<About isDarkMode={isDarkMode} />}
                             />
                             <Route path="/backup" element={<BackupRestore />} />
+                            <Route
+                                path="/data-exchange"
+                                element={<DataExchange />}
+                            />
                             <Route path="/people" element={<PeopleList />} />
                             <Route path="/person/:uid" element={<PersonDetails />} />
                             <Route
