@@ -10,6 +10,14 @@ const { safeAddColumns } = require('../utils/migration-utils');
  * The old `progress_mode` / `importance` / `weight_by_priority` columns are
  * left in place (unused, harmless) rather than risk a FK-carrying SQLite table
  * rebuild — the models no longer reference them.
+ *
+ * NOTE: on a brand-new database, `scripts/db-init.js` creates every table via
+ * `sequelize.sync()` against the *current* models — which never declared
+ * `progress_mode` / `cached_percent` / `cached_health` in the first place —
+ * before this migration (and every other historical one) replays on top. The
+ * backfill below is a no-op in that case (a freshly-synced table has no rows
+ * to backfill anyway), so it is skipped rather than erroring on a column that
+ * was never created. See https://github.com/kennie747/tududi/issues/3.
  */
 const HEALTH = ['on_track', 'at_risk', 'off_track', 'no_data'];
 
@@ -40,6 +48,14 @@ async function upgrade(queryInterface, Sequelize, table) {
             definition: { type: Sequelize.ENUM(...HEALTH), allowNull: true },
         },
     ]);
+
+    const columns = await queryInterface.describeTable(table);
+    if (!columns.cached_percent) {
+        console.log(
+            `${table} has no legacy cached_percent column (fresh database) — skipping backfill`
+        );
+        return;
+    }
 
     // Carry the old single cache forward as the execution cache, and switch
     // metrics on for goals/projects already in a metric-driven mode (Phase 7's
