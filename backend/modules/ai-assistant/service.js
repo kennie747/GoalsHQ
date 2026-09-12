@@ -441,6 +441,17 @@ function buildContextSummary({
 
     // Goals
     const goalSettingsByGoalId = goalshqContext?.goalSettingsByGoalId;
+    const nowDate = now.toDate();
+    // Goals with a future start_date are deliberately not underway yet —
+    // their tasks must not be suggested as "today" priorities before then.
+    const notStartedGoalIds = new Set(
+        goals
+            .filter((g) => {
+                const startDate = goalSettingsByGoalId?.get(g.id)?.start_date;
+                return startDate && new Date(startDate) > nowDate;
+            })
+            .map((g) => g.id)
+    );
     lines.push(`## Active Goals (${goals.length})`);
     if (goals.length === 0) {
         lines.push('No active goals set.');
@@ -458,11 +469,25 @@ function buildContextSummary({
             if (eh && eh !== 'no_data') parts.push(`exec ${eh}`);
             if (oh && oh !== 'no_data') parts.push(`outcome ${oh}`);
             const health = parts.length ? ` [${parts.join(', ')}]` : '';
-            lines.push(`- "${g.title}"${area}${horizon}${target}${health}`);
+            const notStarted = notStartedGoalIds.has(g.id)
+                ? ` — NOT STARTED YET, commences ${moment(settings.start_date).format('MMM D, YYYY')}: do not suggest its tasks as a priority before then`
+                : '';
+            lines.push(
+                `- "${g.title}"${area}${horizon}${target}${health}${notStarted}`
+            );
             if (g.why) lines.push(`  Why: ${g.why}`);
         });
     }
     lines.push('');
+
+    const projectIdToGoalId = new Map(
+        projects.map((p) => [p.id, p.goal_id])
+    );
+    const isGatedByUnstartedGoal = (t) => {
+        const goalId =
+            t.goal_id || t.Goal?.id || projectIdToGoalId.get(t.project_id);
+        return goalId != null && notStartedGoalIds.has(goalId);
+    };
 
     // Strategy & Key Results (GoalsHQ) — capped, context-budget guarded
     if (goalshqContext && goalshqContext.strategyDetails.length > 0) {
@@ -585,8 +610,15 @@ function buildContextSummary({
         lines.push('');
     }
 
-    // Planned for today (up to 5)
-    const plannedTasks = metrics.today_plan_tasks || [];
+    // Planned for today (up to 5) — excludes WAITING/trigger-gated tasks (no
+    // due date, depend on an external event) and tasks whose goal hasn't
+    // reached its own start_date yet (deliberately not underway).
+    const plannedTasks = (metrics.today_plan_tasks || []).filter(
+        (t) =>
+            t.status !== Task.STATUS.WAITING &&
+            t.status !== 'waiting' &&
+            !isGatedByUnstartedGoal(t)
+    );
     if (plannedTasks.length > 0) {
         lines.push(`## Planned for Today`);
         plannedTasks.slice(0, 5).forEach((t) => {
@@ -600,8 +632,16 @@ function buildContextSummary({
         lines.push('');
     }
 
-    // Suggested tasks (up to 5)
-    const suggestedTasks = metrics.suggested_tasks || [];
+    // Suggested tasks (up to 5) — same WAITING + not-yet-started-goal
+    // exclusion as above; this section carries no status label in its
+    // formatted line, so a gated task would otherwise look identical to an
+    // actionable one and could get picked as a headline "focus" item.
+    const suggestedTasks = (metrics.suggested_tasks || []).filter(
+        (t) =>
+            t.status !== Task.STATUS.WAITING &&
+            t.status !== 'waiting' &&
+            !isGatedByUnstartedGoal(t)
+    );
     if (suggestedTasks.length > 0) {
         lines.push(
             `## System-Suggested Tasks (top ${Math.min(5, suggestedTasks.length)})`
