@@ -22,6 +22,7 @@ import TaskList from '../Task/TaskList';
 import { useStore } from '../../store/useStore';
 import { useToast } from '../Shared/ToastContext';
 import ColorPicker from '../Shared/ColorPicker';
+import MarkdownRenderer from '../Shared/MarkdownRenderer';
 import GoalMetricsPanel from './GoalMetricsPanel';
 
 const TASK_STATUS_DONE = [2, 3, 'done', 'archived'];
@@ -514,11 +515,19 @@ const GoalDetails: React.FC = () => {
                                     {goal!.title}
                                 </h1>
                                 {goal!.why && (
-                                    <p
+                                    <div
                                         className={`mt-2 text-sm italic ${hasColor ? 'text-white/80' : 'text-gray-500 dark:text-gray-400'}`}
                                     >
-                                        {goal!.why}
-                                    </p>
+                                        <MarkdownRenderer
+                                            content={goal!.why}
+                                            className="prose prose-sm dark:prose-invert max-w-none italic"
+                                            noteColor={
+                                                hasColor
+                                                    ? effectiveColor
+                                                    : undefined
+                                            }
+                                        />
+                                    </div>
                                 )}
                                 <div
                                     className={`mt-3 flex gap-4 text-xs ${hasColor ? 'text-white/70' : 'text-gray-500 dark:text-gray-400'}`}

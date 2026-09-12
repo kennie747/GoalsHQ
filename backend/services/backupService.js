@@ -2,6 +2,7 @@ const {
     sequelize,
     User,
     Area,
+    Goal,
     Project,
     Task,
     Tag,
@@ -12,6 +13,17 @@ const {
     RecurringCompletion,
     TaskAttachment,
     Backup,
+    GoalshqStrategy,
+    GoalshqProjectStrategy,
+    GoalshqGoalSettings,
+    GoalshqProjectSettings,
+    GoalshqKeyResult,
+    GoalshqKeyResultEntry,
+    GoalshqMilestone,
+    GoalshqMilestoneProject,
+    GoalshqMilestoneTask,
+    GoalshqProgressSnapshot,
+    GoalshqRecord,
 } = require('../models');
 const fs = require('fs').promises;
 const path = require('path');
@@ -116,6 +128,18 @@ async function exportUserData(userId) {
             inboxItems,
             taskEvents,
             views,
+            goals,
+            goalshqStrategies,
+            goalshqProjectStrategies,
+            goalshqGoalSettings,
+            goalshqProjectSettings,
+            goalshqKeyResults,
+            goalshqKeyResultEntries,
+            goalshqMilestones,
+            goalshqRecords,
+            goalshqMilestoneProjects,
+            goalshqMilestoneTasks,
+            goalshqProgressSnapshots,
         ] = await Promise.all([
             Area.findAll({ where: { user_id: userId } }),
             Project.findAll({
@@ -160,6 +184,18 @@ async function exportUserData(userId) {
             InboxItem.findAll({ where: { user_id: userId } }),
             TaskEvent.findAll({ where: { user_id: userId } }),
             View.findAll({ where: { user_id: userId } }),
+            Goal.findAll({ where: { user_id: userId } }),
+            GoalshqStrategy.findAll({ where: { user_id: userId } }),
+            GoalshqProjectStrategy.findAll({ where: { user_id: userId } }),
+            GoalshqGoalSettings.findAll({ where: { user_id: userId } }),
+            GoalshqProjectSettings.findAll({ where: { user_id: userId } }),
+            GoalshqKeyResult.findAll({ where: { user_id: userId } }),
+            GoalshqKeyResultEntry.findAll({ where: { user_id: userId } }),
+            GoalshqMilestone.findAll({ where: { user_id: userId } }),
+            GoalshqRecord.findAll({ where: { user_id: userId } }),
+            GoalshqMilestoneProject.findAll({ where: { user_id: userId } }),
+            GoalshqMilestoneTask.findAll({ where: { user_id: userId } }),
+            GoalshqProgressSnapshot.findAll({ where: { user_id: userId } }),
         ]);
 
         // Build the backup object
@@ -219,6 +255,43 @@ async function exportUserData(userId) {
                 inbox_items: inboxItems.map((item) => item.toJSON()),
                 task_events: taskEvents.map((event) => event.toJSON()),
                 views: views.map((view) => view.toJSON()),
+                goals: goals.map((goal) => goal.toJSON()),
+                goalshq_strategies: goalshqStrategies.map((s) => s.toJSON()),
+                goalshq_project_strategies: goalshqProjectStrategies.map((ps) =>
+                    ps.toJSON()
+                ),
+                // Only the user-set configuration is backed up — cached_*
+                // computed fields are rollup output, not source data, and are
+                // recomputed automatically after restore.
+                goalshq_goal_settings: goalshqGoalSettings.map((s) => ({
+                    goal_id: s.goal_id,
+                    start_date: s.start_date,
+                    manual_percent: s.manual_percent,
+                    metrics_enabled: s.metrics_enabled,
+                })),
+                goalshq_project_settings: goalshqProjectSettings.map((s) => ({
+                    project_id: s.project_id,
+                    manual_percent: s.manual_percent,
+                    metrics_enabled: s.metrics_enabled,
+                })),
+                goalshq_key_results: goalshqKeyResults.map((kr) => kr.toJSON()),
+                goalshq_key_result_entries: goalshqKeyResultEntries.map((e) =>
+                    e.toJSON()
+                ),
+                goalshq_milestones: goalshqMilestones.map((m) => m.toJSON()),
+                goalshq_records: goalshqRecords.map((r) => r.toJSON()),
+                goalshq_milestone_projects: goalshqMilestoneProjects.map((mp) =>
+                    mp.toJSON()
+                ),
+                goalshq_milestone_tasks: goalshqMilestoneTasks.map((mt) =>
+                    mt.toJSON()
+                ),
+                // Cached computed history — restored for continuity of trend
+                // lines, but never a source of truth (the rollup job
+                // regenerates today's snapshot regardless).
+                goalshq_progress_snapshots: goalshqProgressSnapshots.map((s) =>
+                    s.toJSON()
+                ),
             },
         };
 
@@ -260,6 +333,18 @@ async function importUserData(userId, backupData, options = { merge: true }) {
             notes: { created: 0, skipped: 0 },
             inbox_items: { created: 0, skipped: 0 },
             views: { created: 0, skipped: 0 },
+            goals: { created: 0, skipped: 0 },
+            goalshq_strategies: { created: 0, skipped: 0 },
+            goalshq_project_strategies: { created: 0, skipped: 0 },
+            goalshq_goal_settings: { created: 0, updated: 0 },
+            goalshq_project_settings: { created: 0, updated: 0 },
+            goalshq_key_results: { created: 0, skipped: 0 },
+            goalshq_key_result_entries: { created: 0, skipped: 0 },
+            goalshq_milestones: { created: 0, skipped: 0 },
+            goalshq_records: { created: 0, skipped: 0 },
+            goalshq_milestone_projects: { created: 0, skipped: 0 },
+            goalshq_milestone_tasks: { created: 0, skipped: 0 },
+            goalshq_progress_snapshots: { created: 0, skipped: 0 },
         };
 
         // Map to track old UIDs to new IDs for foreign key relationships
@@ -269,6 +354,37 @@ async function importUserData(userId, backupData, options = { merge: true }) {
             tasks: {},
             tags: {},
             notes: {},
+            goals: {},
+            goalshq_strategies: {},
+            goalshq_key_results: {},
+        };
+        // Old numeric ID -> new numeric ID, for FK columns that store a raw
+        // id rather than a uid (area_id, project_id, goal_id, parent_id, ...).
+        // Restoring into a fresh/different database means old and new ids
+        // rarely match, so every such FK must go through this map rather
+        // than being looked up by its old id value directly.
+        const oldIdToNewId = {
+            areas: {},
+            projects: {},
+            tasks: {},
+            goals: {},
+            goalshq_strategies: {},
+            goalshq_key_results: {},
+            goalshq_milestones: {},
+        };
+        // Polymorphic parent_type -> the oldIdToNewId bucket to resolve a
+        // KR/Milestone/Record's parent_id against.
+        const POLY_PARENT_MAP = {
+            goal: 'goals',
+            strategy: 'goalshq_strategies',
+            project: 'projects',
+            task: 'tasks',
+        };
+        const resolveParentId = (parentType, oldParentId) => {
+            if (!parentType || !oldParentId) return null;
+            const bucket = POLY_PARENT_MAP[parentType];
+            if (!bucket) return null;
+            return oldIdToNewId[bucket]?.[oldParentId] ?? null;
         };
 
         // Import tags first (no dependencies)
@@ -308,6 +424,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 if (existingArea && options.merge) {
                     stats.areas.skipped++;
                     uidToIdMap.areas[areaData.uid] = existingArea.id;
+                    if (areaData.id)
+                        oldIdToNewId.areas[areaData.id] = existingArea.id;
                 } else if (!existingArea) {
                     const newArea = await Area.create(
                         {
@@ -320,11 +438,51 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                     );
                     stats.areas.created++;
                     uidToIdMap.areas[areaData.uid] = newArea.id;
+                    if (areaData.id)
+                        oldIdToNewId.areas[areaData.id] = newArea.id;
                 }
             }
         }
 
-        // Import projects (depends on areas)
+        // Import goals (depends on areas)
+        if (backupData.data.goals) {
+            for (const goalData of backupData.data.goals) {
+                const existingGoal = await Goal.findOne({
+                    where: { uid: goalData.uid, user_id: userId },
+                    transaction,
+                });
+
+                if (existingGoal && options.merge) {
+                    stats.goals.skipped++;
+                    uidToIdMap.goals[goalData.uid] = existingGoal.id;
+                    if (goalData.id)
+                        oldIdToNewId.goals[goalData.id] = existingGoal.id;
+                } else if (!existingGoal) {
+                    const newGoal = await Goal.create(
+                        {
+                            uid: goalData.uid,
+                            title: goalData.title,
+                            why: goalData.why,
+                            horizon: goalData.horizon,
+                            status: goalData.status,
+                            target_date: goalData.target_date,
+                            color: goalData.color,
+                            user_id: userId,
+                            area_id: goalData.area_id
+                                ? oldIdToNewId.areas[goalData.area_id] || null
+                                : null,
+                        },
+                        { transaction }
+                    );
+                    stats.goals.created++;
+                    uidToIdMap.goals[goalData.uid] = newGoal.id;
+                    if (goalData.id)
+                        oldIdToNewId.goals[goalData.id] = newGoal.id;
+                }
+            }
+        }
+
+        // Import projects (depends on areas, goals)
         if (backupData.data.projects) {
             for (const projectData of backupData.data.projects) {
                 const existingProject = await Project.findOne({
@@ -335,17 +493,10 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 if (existingProject && options.merge) {
                     stats.projects.skipped++;
                     uidToIdMap.projects[projectData.uid] = existingProject.id;
+                    if (projectData.id)
+                        oldIdToNewId.projects[projectData.id] =
+                            existingProject.id;
                 } else if (!existingProject) {
-                    // Map area_id if it exists
-                    let areaId = null;
-                    if (projectData.area_id) {
-                        const area = await Area.findOne({
-                            where: { id: projectData.area_id },
-                            transaction,
-                        });
-                        areaId = area ? area.id : null;
-                    }
-
                     const newProject = await Project.create(
                         {
                             uid: projectData.uid,
@@ -360,12 +511,21 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                             task_sort_order: projectData.task_sort_order,
                             status: projectData.status || projectData.state,
                             user_id: userId,
-                            area_id: areaId,
+                            area_id: projectData.area_id
+                                ? oldIdToNewId.areas[projectData.area_id] ||
+                                  null
+                                : null,
+                            goal_id: projectData.goal_id
+                                ? oldIdToNewId.goals[projectData.goal_id] ||
+                                  null
+                                : null,
                         },
                         { transaction }
                     );
                     stats.projects.created++;
                     uidToIdMap.projects[projectData.uid] = newProject.id;
+                    if (projectData.id)
+                        oldIdToNewId.projects[projectData.id] = newProject.id;
 
                     // Create project-tag relationships
                     if (
@@ -395,17 +555,9 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 if (existingTask && options.merge) {
                     stats.tasks.skipped++;
                     uidToIdMap.tasks[taskData.uid] = existingTask.id;
+                    if (taskData.id)
+                        oldIdToNewId.tasks[taskData.id] = existingTask.id;
                 } else if (!existingTask) {
-                    // Map project_id if it exists
-                    let projectId = null;
-                    if (taskData.project_id) {
-                        const project = await Project.findOne({
-                            where: { id: taskData.project_id },
-                            transaction,
-                        });
-                        projectId = project ? project.id : null;
-                    }
-
                     const newTask = await Task.create(
                         {
                             uid: taskData.uid,
@@ -427,12 +579,23 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                             order: taskData.order,
                             completed_at: taskData.completed_at,
                             user_id: userId,
-                            project_id: projectId,
+                            project_id: taskData.project_id
+                                ? oldIdToNewId.projects[taskData.project_id] ||
+                                  null
+                                : null,
+                            area_id: taskData.area_id
+                                ? oldIdToNewId.areas[taskData.area_id] || null
+                                : null,
+                            goal_id: taskData.goal_id
+                                ? oldIdToNewId.goals[taskData.goal_id] || null
+                                : null,
                         },
                         { transaction }
                     );
                     stats.tasks.created++;
                     uidToIdMap.tasks[taskData.uid] = newTask.id;
+                    if (taskData.id)
+                        oldIdToNewId.tasks[taskData.id] = newTask.id;
 
                     // Create task-tag relationships
                     if (taskData.tag_uids && taskData.tag_uids.length > 0) {
@@ -494,29 +657,21 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                         const updates = {};
 
                         if (taskData.parent_task_id) {
-                            const parentTask = await Task.findOne({
-                                where: {
-                                    id: taskData.parent_task_id,
-                                    user_id: userId,
-                                },
-                                transaction,
-                            });
-                            if (parentTask) {
-                                updates.parent_task_id = parentTask.id;
+                            const newParentId =
+                                oldIdToNewId.tasks[taskData.parent_task_id];
+                            if (newParentId) {
+                                updates.parent_task_id = newParentId;
                             }
                         }
 
                         if (taskData.recurring_parent_id) {
-                            const recurringParent = await Task.findOne({
-                                where: {
-                                    id: taskData.recurring_parent_id,
-                                    user_id: userId,
-                                },
-                                transaction,
-                            });
-                            if (recurringParent) {
+                            const newRecurringParentId =
+                                oldIdToNewId.tasks[
+                                    taskData.recurring_parent_id
+                                ];
+                            if (newRecurringParentId) {
                                 updates.recurring_parent_id =
-                                    recurringParent.id;
+                                    newRecurringParentId;
                             }
                         }
 
@@ -524,6 +679,387 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                             await task.update(updates, { transaction });
                         }
                     }
+                }
+            }
+        }
+
+        // Import GoalsHQ strategies (depends on goals)
+        if (backupData.data.goalshq_strategies) {
+            for (const sData of backupData.data.goalshq_strategies) {
+                const existing = await GoalshqStrategy.findOne({
+                    where: { uid: sData.uid, user_id: userId },
+                    transaction,
+                });
+                if (existing && options.merge) {
+                    stats.goalshq_strategies.skipped++;
+                    uidToIdMap.goalshq_strategies[sData.uid] = existing.id;
+                    if (sData.id)
+                        oldIdToNewId.goalshq_strategies[sData.id] = existing.id;
+                } else if (!existing) {
+                    const created = await GoalshqStrategy.create(
+                        {
+                            uid: sData.uid,
+                            name: sData.name,
+                            description: sData.description,
+                            status: sData.status,
+                            metrics_editable: sData.metrics_editable,
+                            color: sData.color,
+                            user_id: userId,
+                            goal_id: sData.goal_id
+                                ? oldIdToNewId.goals[sData.goal_id] || null
+                                : null,
+                        },
+                        { transaction }
+                    );
+                    stats.goalshq_strategies.created++;
+                    uidToIdMap.goalshq_strategies[sData.uid] = created.id;
+                    if (sData.id)
+                        oldIdToNewId.goalshq_strategies[sData.id] = created.id;
+                }
+            }
+        }
+
+        // Import GoalsHQ project<->strategy links (depends on projects, strategies)
+        if (backupData.data.goalshq_project_strategies) {
+            for (const psData of backupData.data.goalshq_project_strategies) {
+                const newStrategyId =
+                    oldIdToNewId.goalshq_strategies[psData.strategy_id];
+                const newProjectId = oldIdToNewId.projects[psData.project_id];
+                if (!newStrategyId || !newProjectId) continue;
+                const existing = await GoalshqProjectStrategy.findOne({
+                    where: {
+                        strategy_id: newStrategyId,
+                        project_id: newProjectId,
+                        user_id: userId,
+                    },
+                    transaction,
+                });
+                if (existing) {
+                    stats.goalshq_project_strategies.skipped++;
+                } else {
+                    await GoalshqProjectStrategy.create(
+                        {
+                            strategy_id: newStrategyId,
+                            project_id: newProjectId,
+                            weight: psData.weight,
+                            user_id: userId,
+                        },
+                        { transaction }
+                    );
+                    stats.goalshq_project_strategies.created++;
+                }
+            }
+        }
+
+        // Import GoalsHQ goal settings (1:1 with goal; upsert, not uid-based)
+        if (backupData.data.goalshq_goal_settings) {
+            for (const settings of backupData.data.goalshq_goal_settings) {
+                const newGoalId = oldIdToNewId.goals[settings.goal_id];
+                if (!newGoalId) continue;
+                const [, created] = await GoalshqGoalSettings.upsert(
+                    {
+                        goal_id: newGoalId,
+                        user_id: userId,
+                        start_date: settings.start_date,
+                        manual_percent: settings.manual_percent,
+                        metrics_enabled: settings.metrics_enabled,
+                    },
+                    { transaction }
+                );
+                if (created) stats.goalshq_goal_settings.created++;
+                else stats.goalshq_goal_settings.updated++;
+            }
+        }
+
+        // Import GoalsHQ project settings (1:1 with project; upsert)
+        if (backupData.data.goalshq_project_settings) {
+            for (const settings of backupData.data.goalshq_project_settings) {
+                const newProjectId = oldIdToNewId.projects[settings.project_id];
+                if (!newProjectId) continue;
+                const [, created] = await GoalshqProjectSettings.upsert(
+                    {
+                        project_id: newProjectId,
+                        user_id: userId,
+                        manual_percent: settings.manual_percent,
+                        metrics_enabled: settings.metrics_enabled,
+                    },
+                    { transaction }
+                );
+                if (created) stats.goalshq_project_settings.created++;
+                else stats.goalshq_project_settings.updated++;
+            }
+        }
+
+        // Import GoalsHQ key results (polymorphic parent + self-referential
+        // parent_kr_id — two passes, same pattern as tasks above)
+        if (backupData.data.goalshq_key_results) {
+            for (const krData of backupData.data.goalshq_key_results) {
+                const existing = await GoalshqKeyResult.findOne({
+                    where: { uid: krData.uid, user_id: userId },
+                    transaction,
+                });
+                const parentId = resolveParentId(
+                    krData.parent_type,
+                    krData.parent_id
+                );
+                if (existing && options.merge) {
+                    stats.goalshq_key_results.skipped++;
+                    uidToIdMap.goalshq_key_results[krData.uid] = existing.id;
+                    if (krData.id)
+                        oldIdToNewId.goalshq_key_results[krData.id] =
+                            existing.id;
+                } else if (!existing && parentId) {
+                    const created = await GoalshqKeyResult.create(
+                        {
+                            uid: krData.uid,
+                            name: krData.name,
+                            parent_type: krData.parent_type,
+                            parent_id: parentId,
+                            unit: krData.unit,
+                            direction: krData.direction,
+                            auto_source: krData.auto_source,
+                            baseline_value: krData.baseline_value,
+                            target_value: krData.target_value,
+                            current_value: krData.current_value,
+                            sort_order: krData.sort_order,
+                            user_id: userId,
+                        },
+                        { transaction }
+                    );
+                    stats.goalshq_key_results.created++;
+                    uidToIdMap.goalshq_key_results[krData.uid] = created.id;
+                    if (krData.id)
+                        oldIdToNewId.goalshq_key_results[krData.id] =
+                            created.id;
+                }
+            }
+            // Second pass: self-referential parent_kr_id (KR tree)
+            for (const krData of backupData.data.goalshq_key_results) {
+                if (!krData.parent_kr_id) continue;
+                const newParentKrId =
+                    oldIdToNewId.goalshq_key_results[krData.parent_kr_id];
+                if (!newParentKrId) continue;
+                const kr = await GoalshqKeyResult.findOne({
+                    where: { uid: krData.uid, user_id: userId },
+                    transaction,
+                });
+                if (kr) {
+                    await kr.update(
+                        { parent_kr_id: newParentKrId },
+                        { transaction }
+                    );
+                }
+            }
+        }
+
+        // Import GoalsHQ KR entries (depends on key results)
+        if (backupData.data.goalshq_key_result_entries) {
+            for (const entryData of backupData.data
+                .goalshq_key_result_entries) {
+                const newKrId =
+                    oldIdToNewId.goalshq_key_results[entryData.key_result_id];
+                if (!newKrId) continue;
+                const existing = await GoalshqKeyResultEntry.findOne({
+                    where: { uid: entryData.uid, user_id: userId },
+                    transaction,
+                });
+                if (existing && options.merge) {
+                    stats.goalshq_key_result_entries.skipped++;
+                } else if (!existing) {
+                    await GoalshqKeyResultEntry.create(
+                        {
+                            uid: entryData.uid,
+                            key_result_id: newKrId,
+                            entry_date: entryData.entry_date,
+                            value: entryData.value,
+                            note: entryData.note,
+                            user_id: userId,
+                        },
+                        { transaction }
+                    );
+                    stats.goalshq_key_result_entries.created++;
+                }
+            }
+        }
+
+        // Import GoalsHQ milestones (polymorphic parent: goal/strategy/project)
+        if (backupData.data.goalshq_milestones) {
+            for (const mData of backupData.data.goalshq_milestones) {
+                const parentId = resolveParentId(
+                    mData.parent_type,
+                    mData.parent_id
+                );
+                const existing = await GoalshqMilestone.findOne({
+                    where: { uid: mData.uid, user_id: userId },
+                    transaction,
+                });
+                if (existing && options.merge) {
+                    stats.goalshq_milestones.skipped++;
+                    if (mData.id)
+                        oldIdToNewId.goalshq_milestones[mData.id] = existing.id;
+                } else if (!existing && parentId) {
+                    const created = await GoalshqMilestone.create(
+                        {
+                            uid: mData.uid,
+                            title: mData.title,
+                            parent_type: mData.parent_type,
+                            parent_id: parentId,
+                            target_date: mData.target_date,
+                            target_value: mData.target_value,
+                            status: mData.status,
+                            achieved_at: mData.achieved_at,
+                            completion_mode: mData.completion_mode,
+                            user_id: userId,
+                        },
+                        { transaction }
+                    );
+                    stats.goalshq_milestones.created++;
+                    if (mData.id)
+                        oldIdToNewId.goalshq_milestones[mData.id] = created.id;
+                }
+            }
+        }
+
+        // Import GoalsHQ records (polymorphic parent + optional KR link)
+        if (backupData.data.goalshq_records) {
+            for (const rData of backupData.data.goalshq_records) {
+                const parentId = resolveParentId(
+                    rData.parent_type,
+                    rData.parent_id
+                );
+                const existing = await GoalshqRecord.findOne({
+                    where: { uid: rData.uid, user_id: userId },
+                    transaction,
+                });
+                if (existing && options.merge) {
+                    stats.goalshq_records.skipped++;
+                } else if (!existing && parentId) {
+                    await GoalshqRecord.create(
+                        {
+                            uid: rData.uid,
+                            title: rData.title,
+                            parent_type: rData.parent_type,
+                            parent_id: parentId,
+                            record_date: rData.record_date,
+                            category: rData.category,
+                            amount: rData.amount,
+                            unit: rData.unit,
+                            status: rData.status,
+                            counts_toward_kr_id: rData.counts_toward_kr_id
+                                ? oldIdToNewId.goalshq_key_results[
+                                      rData.counts_toward_kr_id
+                                  ] || null
+                                : null,
+                            evidence_url: rData.evidence_url,
+                            body: rData.body,
+                            user_id: userId,
+                        },
+                        { transaction }
+                    );
+                    stats.goalshq_records.created++;
+                }
+            }
+        }
+
+        // Import GoalsHQ milestone<->project links (depends on milestones, projects)
+        if (backupData.data.goalshq_milestone_projects) {
+            for (const mpData of backupData.data.goalshq_milestone_projects) {
+                const newMilestoneId =
+                    oldIdToNewId.goalshq_milestones[mpData.milestone_id];
+                const newProjectId = oldIdToNewId.projects[mpData.project_id];
+                if (!newMilestoneId || !newProjectId) continue;
+                const existing = await GoalshqMilestoneProject.findOne({
+                    where: {
+                        milestone_id: newMilestoneId,
+                        project_id: newProjectId,
+                        user_id: userId,
+                    },
+                    transaction,
+                });
+                if (existing) {
+                    stats.goalshq_milestone_projects.skipped++;
+                } else {
+                    await GoalshqMilestoneProject.create(
+                        {
+                            milestone_id: newMilestoneId,
+                            project_id: newProjectId,
+                            user_id: userId,
+                        },
+                        { transaction }
+                    );
+                    stats.goalshq_milestone_projects.created++;
+                }
+            }
+        }
+
+        // Import GoalsHQ milestone<->task links (depends on milestones, tasks)
+        if (backupData.data.goalshq_milestone_tasks) {
+            for (const mtData of backupData.data.goalshq_milestone_tasks) {
+                const newMilestoneId =
+                    oldIdToNewId.goalshq_milestones[mtData.milestone_id];
+                const newTaskId = oldIdToNewId.tasks[mtData.task_id];
+                if (!newMilestoneId || !newTaskId) continue;
+                const existing = await GoalshqMilestoneTask.findOne({
+                    where: {
+                        milestone_id: newMilestoneId,
+                        task_id: newTaskId,
+                        user_id: userId,
+                    },
+                    transaction,
+                });
+                if (existing) {
+                    stats.goalshq_milestone_tasks.skipped++;
+                } else {
+                    await GoalshqMilestoneTask.create(
+                        {
+                            milestone_id: newMilestoneId,
+                            task_id: newTaskId,
+                            user_id: userId,
+                        },
+                        { transaction }
+                    );
+                    stats.goalshq_milestone_tasks.created++;
+                }
+            }
+        }
+
+        // Import GoalsHQ progress snapshots (polymorphic parent: goal/strategy/
+        // project only — cached trend history, not a source of truth, but
+        // restored so trend lines don't show a gap after a restore).
+        if (backupData.data.goalshq_progress_snapshots) {
+            for (const snap of backupData.data.goalshq_progress_snapshots) {
+                const parentId = resolveParentId(
+                    snap.parent_type,
+                    snap.parent_id
+                );
+                if (!parentId) continue;
+                const existing = await GoalshqProgressSnapshot.findOne({
+                    where: {
+                        parent_type: snap.parent_type,
+                        parent_id: parentId,
+                        kind: snap.kind,
+                        snapshot_date: snap.snapshot_date,
+                        user_id: userId,
+                    },
+                    transaction,
+                });
+                if (existing) {
+                    stats.goalshq_progress_snapshots.skipped++;
+                } else {
+                    await GoalshqProgressSnapshot.create(
+                        {
+                            parent_type: snap.parent_type,
+                            parent_id: parentId,
+                            kind: snap.kind,
+                            snapshot_date: snap.snapshot_date,
+                            percent: snap.percent,
+                            health: snap.health,
+                            source: snap.source,
+                            user_id: userId,
+                        },
+                        { transaction }
+                    );
+                    stats.goalshq_progress_snapshots.created++;
                 }
             }
         }
@@ -539,15 +1075,9 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 if (existingNote && options.merge) {
                     stats.notes.skipped++;
                 } else if (!existingNote) {
-                    // Map project_id if it exists
-                    let projectId = null;
-                    if (noteData.project_id) {
-                        const project = await Project.findOne({
-                            where: { id: noteData.project_id },
-                            transaction,
-                        });
-                        projectId = project ? project.id : null;
-                    }
+                    const projectId = noteData.project_id
+                        ? oldIdToNewId.projects[noteData.project_id] || null
+                        : null;
 
                     const newNote = await Note.create(
                         {
