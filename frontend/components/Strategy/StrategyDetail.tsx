@@ -14,6 +14,7 @@ import {
     deleteStrategy,
 } from '../../utils/goalsHqService';
 import DeleteConfirmDialog from '../Shared/DeleteConfirmDialog';
+import MarkdownRenderer from '../Shared/MarkdownRenderer';
 import { useToast } from '../Shared/ToastContext';
 import {
     extractUidFromSlug,
@@ -151,9 +152,12 @@ const StrategyDetail: React.FC = () => {
                         </span>
                     </div>
                     {strategy.description && (
-                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                            {strategy.description}
-                        </p>
+                        <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                            <MarkdownRenderer
+                                content={strategy.description}
+                                className="prose prose-sm dark:prose-invert max-w-none"
+                            />
+                        </div>
                     )}
                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                         {t('goalshq.parentGoal', 'Goal')}:{' '}

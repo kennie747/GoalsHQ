@@ -16,6 +16,7 @@ import {
     isPresetBanner,
 } from '../../utils/bannersService';
 import { getAssetPath } from '../../config/paths';
+import MarkdownRenderer from '../Shared/MarkdownRenderer';
 
 interface ProjectBannerProps {
     project: Project;
@@ -122,9 +123,13 @@ const ProjectBanner: React.FC<ProjectBannerProps> = ({
                             {project.name}
                         </h1>
                         {project.description && (
-                            <p className="text-lg md:text-xl text-white/90 mt-2 font-light drop-shadow-md max-w-2xl mx-auto project-banner-desc">
-                                {project.description}
-                            </p>
+                            <div className="text-lg md:text-xl text-white/90 mt-2 font-light drop-shadow-md max-w-2xl mx-auto project-banner-desc">
+                                <MarkdownRenderer
+                                    content={project.description}
+                                    className="prose prose-invert max-w-none"
+                                    noteColor="#000000"
+                                />
+                            </div>
                         )}
                     </div>
                 </div>
