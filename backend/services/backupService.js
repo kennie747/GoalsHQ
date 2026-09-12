@@ -257,8 +257,8 @@ async function exportUserData(userId) {
                 views: views.map((view) => view.toJSON()),
                 goals: goals.map((goal) => goal.toJSON()),
                 goalshq_strategies: goalshqStrategies.map((s) => s.toJSON()),
-                goalshq_project_strategies: goalshqProjectStrategies.map(
-                    (ps) => ps.toJSON()
+                goalshq_project_strategies: goalshqProjectStrategies.map((ps) =>
+                    ps.toJSON()
                 ),
                 // Only the user-set configuration is backed up — cached_*
                 // computed fields are rollup output, not source data, and are
@@ -274,16 +274,14 @@ async function exportUserData(userId) {
                     manual_percent: s.manual_percent,
                     metrics_enabled: s.metrics_enabled,
                 })),
-                goalshq_key_results: goalshqKeyResults.map((kr) =>
-                    kr.toJSON()
-                ),
-                goalshq_key_result_entries: goalshqKeyResultEntries.map(
-                    (e) => e.toJSON()
+                goalshq_key_results: goalshqKeyResults.map((kr) => kr.toJSON()),
+                goalshq_key_result_entries: goalshqKeyResultEntries.map((e) =>
+                    e.toJSON()
                 ),
                 goalshq_milestones: goalshqMilestones.map((m) => m.toJSON()),
                 goalshq_records: goalshqRecords.map((r) => r.toJSON()),
-                goalshq_milestone_projects: goalshqMilestoneProjects.map(
-                    (mp) => mp.toJSON()
+                goalshq_milestone_projects: goalshqMilestoneProjects.map((mp) =>
+                    mp.toJSON()
                 ),
                 goalshq_milestone_tasks: goalshqMilestoneTasks.map((mt) =>
                     mt.toJSON()
@@ -291,8 +289,8 @@ async function exportUserData(userId) {
                 // Cached computed history — restored for continuity of trend
                 // lines, but never a source of truth (the rollup job
                 // regenerates today's snapshot regardless).
-                goalshq_progress_snapshots: goalshqProgressSnapshots.map(
-                    (s) => s.toJSON()
+                goalshq_progress_snapshots: goalshqProgressSnapshots.map((s) =>
+                    s.toJSON()
                 ),
             },
         };
@@ -426,7 +424,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 if (existingArea && options.merge) {
                     stats.areas.skipped++;
                     uidToIdMap.areas[areaData.uid] = existingArea.id;
-                    if (areaData.id) oldIdToNewId.areas[areaData.id] = existingArea.id;
+                    if (areaData.id)
+                        oldIdToNewId.areas[areaData.id] = existingArea.id;
                 } else if (!existingArea) {
                     const newArea = await Area.create(
                         {
@@ -439,7 +438,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                     );
                     stats.areas.created++;
                     uidToIdMap.areas[areaData.uid] = newArea.id;
-                    if (areaData.id) oldIdToNewId.areas[areaData.id] = newArea.id;
+                    if (areaData.id)
+                        oldIdToNewId.areas[areaData.id] = newArea.id;
                 }
             }
         }
@@ -455,7 +455,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 if (existingGoal && options.merge) {
                     stats.goals.skipped++;
                     uidToIdMap.goals[goalData.uid] = existingGoal.id;
-                    if (goalData.id) oldIdToNewId.goals[goalData.id] = existingGoal.id;
+                    if (goalData.id)
+                        oldIdToNewId.goals[goalData.id] = existingGoal.id;
                 } else if (!existingGoal) {
                     const newGoal = await Goal.create(
                         {
@@ -475,7 +476,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                     );
                     stats.goals.created++;
                     uidToIdMap.goals[goalData.uid] = newGoal.id;
-                    if (goalData.id) oldIdToNewId.goals[goalData.id] = newGoal.id;
+                    if (goalData.id)
+                        oldIdToNewId.goals[goalData.id] = newGoal.id;
                 }
             }
         }
@@ -491,7 +493,9 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 if (existingProject && options.merge) {
                     stats.projects.skipped++;
                     uidToIdMap.projects[projectData.uid] = existingProject.id;
-                    if (projectData.id) oldIdToNewId.projects[projectData.id] = existingProject.id;
+                    if (projectData.id)
+                        oldIdToNewId.projects[projectData.id] =
+                            existingProject.id;
                 } else if (!existingProject) {
                     const newProject = await Project.create(
                         {
@@ -520,7 +524,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                     );
                     stats.projects.created++;
                     uidToIdMap.projects[projectData.uid] = newProject.id;
-                    if (projectData.id) oldIdToNewId.projects[projectData.id] = newProject.id;
+                    if (projectData.id)
+                        oldIdToNewId.projects[projectData.id] = newProject.id;
 
                     // Create project-tag relationships
                     if (
@@ -550,7 +555,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 if (existingTask && options.merge) {
                     stats.tasks.skipped++;
                     uidToIdMap.tasks[taskData.uid] = existingTask.id;
-                    if (taskData.id) oldIdToNewId.tasks[taskData.id] = existingTask.id;
+                    if (taskData.id)
+                        oldIdToNewId.tasks[taskData.id] = existingTask.id;
                 } else if (!existingTask) {
                     const newTask = await Task.create(
                         {
@@ -588,7 +594,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                     );
                     stats.tasks.created++;
                     uidToIdMap.tasks[taskData.uid] = newTask.id;
-                    if (taskData.id) oldIdToNewId.tasks[taskData.id] = newTask.id;
+                    if (taskData.id)
+                        oldIdToNewId.tasks[taskData.id] = newTask.id;
 
                     // Create task-tag relationships
                     if (taskData.tag_uids && taskData.tag_uids.length > 0) {
@@ -686,7 +693,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 if (existing && options.merge) {
                     stats.goalshq_strategies.skipped++;
                     uidToIdMap.goalshq_strategies[sData.uid] = existing.id;
-                    if (sData.id) oldIdToNewId.goalshq_strategies[sData.id] = existing.id;
+                    if (sData.id)
+                        oldIdToNewId.goalshq_strategies[sData.id] = existing.id;
                 } else if (!existing) {
                     const created = await GoalshqStrategy.create(
                         {
@@ -705,7 +713,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                     );
                     stats.goalshq_strategies.created++;
                     uidToIdMap.goalshq_strategies[sData.uid] = created.id;
-                    if (sData.id) oldIdToNewId.goalshq_strategies[sData.id] = created.id;
+                    if (sData.id)
+                        oldIdToNewId.goalshq_strategies[sData.id] = created.id;
                 }
             }
         }
@@ -765,8 +774,7 @@ async function importUserData(userId, backupData, options = { merge: true }) {
         // Import GoalsHQ project settings (1:1 with project; upsert)
         if (backupData.data.goalshq_project_settings) {
             for (const settings of backupData.data.goalshq_project_settings) {
-                const newProjectId =
-                    oldIdToNewId.projects[settings.project_id];
+                const newProjectId = oldIdToNewId.projects[settings.project_id];
                 if (!newProjectId) continue;
                 const [, created] = await GoalshqProjectSettings.upsert(
                     {
@@ -797,7 +805,9 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 if (existing && options.merge) {
                     stats.goalshq_key_results.skipped++;
                     uidToIdMap.goalshq_key_results[krData.uid] = existing.id;
-                    if (krData.id) oldIdToNewId.goalshq_key_results[krData.id] = existing.id;
+                    if (krData.id)
+                        oldIdToNewId.goalshq_key_results[krData.id] =
+                            existing.id;
                 } else if (!existing && parentId) {
                     const created = await GoalshqKeyResult.create(
                         {
@@ -818,7 +828,9 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                     );
                     stats.goalshq_key_results.created++;
                     uidToIdMap.goalshq_key_results[krData.uid] = created.id;
-                    if (krData.id) oldIdToNewId.goalshq_key_results[krData.id] = created.id;
+                    if (krData.id)
+                        oldIdToNewId.goalshq_key_results[krData.id] =
+                            created.id;
                 }
             }
             // Second pass: self-referential parent_kr_id (KR tree)
@@ -883,7 +895,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                 });
                 if (existing && options.merge) {
                     stats.goalshq_milestones.skipped++;
-                    if (mData.id) oldIdToNewId.goalshq_milestones[mData.id] = existing.id;
+                    if (mData.id)
+                        oldIdToNewId.goalshq_milestones[mData.id] = existing.id;
                 } else if (!existing && parentId) {
                     const created = await GoalshqMilestone.create(
                         {
@@ -901,7 +914,8 @@ async function importUserData(userId, backupData, options = { merge: true }) {
                         { transaction }
                     );
                     stats.goalshq_milestones.created++;
-                    if (mData.id) oldIdToNewId.goalshq_milestones[mData.id] = created.id;
+                    if (mData.id)
+                        oldIdToNewId.goalshq_milestones[mData.id] = created.id;
                 }
             }
         }

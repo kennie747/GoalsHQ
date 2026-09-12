@@ -480,9 +480,7 @@ function buildContextSummary({
     }
     lines.push('');
 
-    const projectIdToGoalId = new Map(
-        projects.map((p) => [p.id, p.goal_id])
-    );
+    const projectIdToGoalId = new Map(projects.map((p) => [p.id, p.goal_id]));
     const isGatedByUnstartedGoal = (t) => {
         const goalId =
             t.goal_id || t.Goal?.id || projectIdToGoalId.get(t.project_id);
