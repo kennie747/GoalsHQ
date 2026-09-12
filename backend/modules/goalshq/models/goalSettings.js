@@ -36,6 +36,16 @@ module.exports = (sequelize) => {
                 allowNull: false,
                 defaultValue: false,
             },
+            // Deprecated (superseded by the execution/outcome split above)
+            // and no longer read anywhere — but the underlying column is
+            // still NOT NULL with no working SQLite-level default in
+            // existing databases, so it must stay declared here or every
+            // Sequelize-issued INSERT/UPSERT that omits it fails outright.
+            weight_by_priority: {
+                type: DataTypes.BOOLEAN,
+                allowNull: false,
+                defaultValue: false,
+            },
             start_date: {
                 type: DataTypes.DATEONLY,
                 allowNull: true,
